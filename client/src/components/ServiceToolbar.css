@@ -1,9 +1,0 @@
-.service-toolbar button.selected {
-  border: 2px solid #4CAF50;
-  background-color: rgba(76, 175, 80, 0.2);
-}
-
-.service-toolbar button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}

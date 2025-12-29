@@ -1,0 +1,4 @@
+- Implement the CALCULATE_PATH
+- Review and check network latency
+- Review the dynamic port mapping
+- Review the request executor
