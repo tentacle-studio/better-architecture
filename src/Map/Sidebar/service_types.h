@@ -6,5 +6,6 @@ enum class ServiceType {
     REDIS,
     NGINX,
     LOAD_BALANCER,
-    API_GATEWAY
+    API_GATEWAY,
+    SERVER,
 };

@@ -43,7 +43,8 @@ void Sidebar::setupIcons(const sf::RenderWindow&) {
         {ServiceType::REDIS, "Redis", sf::Color(211, 59, 42)},          // Redis red
         {ServiceType::NGINX, "Nginx", sf::Color(0, 150, 57)},           // Nginx green
         {ServiceType::LOAD_BALANCER, "Load Balancer", sf::Color(255, 165, 0)}, // Orange
-        {ServiceType::API_GATEWAY, "API Gateway", sf::Color(138, 43, 226)}     // Purple
+        {ServiceType::API_GATEWAY, "API Gateway", sf::Color(138, 43, 226)},     // Purple
+        {ServiceType::SERVER, "Server", sf::Color(128, 128, 128)},       // Gray
     };
     
     float currentY = startY;

@@ -3,6 +3,7 @@ build/
 out/
 bin/
 lib/
+target/
 
 # CMake
 CMakeCache.txt
@@ -38,3 +39,6 @@ vcpkg_installed/
 # Debug files
 *.dSYM/
 *.pdb
+
+# MacOS
+.DS_Store

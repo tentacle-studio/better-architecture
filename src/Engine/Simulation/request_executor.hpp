@@ -16,6 +16,11 @@ struct RequestResult {
 class RequestExecutor {
 private:
     ThreadPool pool;
+    
+    // Static callback for CURL to discard response data
+    static size_t WriteCallbackDiscard(void* ptr, size_t size, size_t nmemb, void* userdata) {
+        return size * nmemb; // Discard data, just return bytes processed
+    }
 
 public:
     // Initialize with e.g., 8 concurrent connections allowed
@@ -62,6 +67,7 @@ public:
         CURL* curl;
         CURLcode res;
         long http_code = 0;
+        std::string response_data;
         
         curl = curl_easy_init();
         if(curl) {
@@ -70,9 +76,9 @@ public:
             // Set a timeout so the game handles "Packet Loss" simulation
             curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, 2000L); 
             
-            // Don't clutter stdout
-            curl_easy_setopt(curl, CURLOPT_NOBODY, 1L); // HEAD request only (faster for sim)
-            // OR use CURLOPT_WRITEFUNCTION to swallow output if you need GET body
+            // Use GET request instead of HEAD for better compatibility with web apps
+            // Discard response body to avoid clutter
+            curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallbackDiscard);
 
             res = curl_easy_perform(curl);
             

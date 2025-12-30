@@ -1,7 +1,7 @@
 #pragma once
 #include <string>
 #include <SFML/Graphics.hpp>
-#include "Sidebar/service_types.h"
+#include "Map/Sidebar/service_types.h"
 
 // Represents a logical service instance (e.g., Postgres, Redis, Nginx)
 class ServiceEntity {

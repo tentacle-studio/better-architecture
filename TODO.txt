@@ -1,4 +1,4 @@
-- Implement the CALCULATE_PATH
+- Define the path of request exectuor and implement the CALCULATE_PATH
 - Review and check network latency
-- Review the dynamic port mapping
-- Review the request executor
+- Review the dynamic port mapping (lgtm)
+- Review response from server after handling request

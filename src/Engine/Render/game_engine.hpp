@@ -6,11 +6,11 @@
 #include <queue>
 #include <functional>
 #include <memory>
-#include "Map/sparse_map.h" // Include the header, not the .cpp file
-#include "Sidebar/sidebar.hpp"
-#include "Sidebar/service_types.h"
-#include "Docker/job.h"
-#include "Docker/packet.hpp"
+#include "Map/Grid/sparse_map.h" // Include the header, not the .cpp file
+#include "Map/Sidebar/sidebar.hpp"
+#include "Map/Sidebar/service_types.h"
+#include "Engine/Simulation/job.h"
+#include "Engine/Simulation/packet.hpp"
 
 // Forward declaration
 class SimulationManager;

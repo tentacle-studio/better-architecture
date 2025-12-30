@@ -20,10 +20,10 @@ find_package(nlohmann_json CONFIG REQUIRED)
 # Create executable
 add_executable(better-architecture 
     src/main.cpp
-    src/Map/game_grid.cpp
-    src/Map/service_entity.cpp
-    src/engine/game_engine.cpp
-    src/Sidebar/sidebar.cpp
+    src/Map/Grid/game_grid.cpp
+    src/Map/Grid/service_entity.cpp
+    src/Map/Sidebar/sidebar.cpp
+    src/Engine/Render/game_engine.cpp
 )
 
 # Link libraries

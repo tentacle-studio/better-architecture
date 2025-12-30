@@ -1,6 +1,6 @@
 #include "game_engine.hpp"
-#include "Map/service_entity.h"
-#include "Docker/simulation_manager.cpp"
+#include "Map/Grid/service_entity.h"
+#include "Engine/Simulation/simulation_manager.cpp"
 #include <iostream>
 #include <algorithm>
 #include <cmath>
@@ -128,6 +128,7 @@ void GameEngine::processInput() {
                                 case ServiceType::NGINX: job.metaData = "NGINX"; break;
                                 case ServiceType::LOAD_BALANCER: job.metaData = "LOAD_BALANCER"; break;
                                 case ServiceType::API_GATEWAY: job.metaData = "API_GATEWAY"; break;
+                                case ServiceType::SERVER: job.metaData = "SERVER"; break;
                                 default: job.metaData = "NGINX"; break;
                             }
                             
@@ -267,7 +268,11 @@ void GameEngine::update(float dt) {
                   << " (" << result.durationMs << "ms)" << std::endl;
         
         if (!result.errorMsg.empty()) {
-            std::cout << "  Error: " << result.errorMsg << std::endl;
+            if (result.success) {
+                std::cout << "  Info: " << result.errorMsg << std::endl;
+            } else {
+                std::cout << "  Error: " << result.errorMsg << std::endl;
+            }
         }
     }
     

@@ -1,5 +1,5 @@
 #pragma once
-#include "Map/tile_enums.h"
+#include "Map/Grid/tile_enums.h"
 #include <string>
 
 enum class JobType {

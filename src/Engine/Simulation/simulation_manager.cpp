@@ -1,7 +1,7 @@
-#include "docker_client.hpp"
+#include "Docker/docker_client.hpp"
 #include "request_executor.hpp"
-#include "../Engine/game_engine.hpp"
-#include "port_manager.hpp"
+#include "Engine/Render/game_engine.hpp"
+#include "Docker/port_manager.hpp"
 #include <atomic>
 #include <iostream>
 
@@ -25,9 +25,7 @@ class SimulationManager {
         if (serviceTypeStr == "NGINX") return "nginx:latest";
         if (serviceTypeStr == "LOAD_BALANCER") return "nginx:alpine"; // Lightweight nginx
         if (serviceTypeStr == "API_GATEWAY") return "kong:latest";
-        
-        // Default fallback
-        return "nginx:latest";
+        if (serviceTypeStr == "SERVER") return "tomcat:9.0-jre11-openjdk-slim"; // Example app server
     }
 
     // Helper to determine internal port
@@ -101,12 +99,22 @@ public:
                     // 1. Get a Port
                     int hostPort = portManager.acquirePort();
                     
-                    // 2. Identify Internal Port
-                    // Assume job.metaData contains the image name (e.g., "nginx:latest")
-                    int internalPort = getInternalPortForImage(job.metaData);
+                    // 2. Map service type to actual Docker image name
+                    std::string imageName = getDockerImageForService(job.metaData);
                     
-                    // 3. Create Container with Mapping
-                    std::string containerId = docker.createContainer(job.metaData, internalPort, hostPort);
+                    // 3. Identify Internal Port based on the actual image
+                    int internalPort = getInternalPortForImage(imageName);
+                    
+                    // 4. Prepare mounts for SERVER type (Tomcat)
+                    std::vector<std::pair<std::string, std::string>> mounts;
+                    if (job.metaData == "SERVER") {
+                        // Docker requires absolute paths for bind mounts
+                        std::string warPath = "/Users/jimmynguyen/Desktop/better-architecture/src/bin/assets/java/ROOT.war";
+                        mounts.push_back({warPath, "/usr/local/tomcat/webapps/ROOT.war"});
+                    }
+                    
+                    // 5. Create Container with Mapping and Mounts
+                    std::string containerId = docker.createContainer(imageName, internalPort, hostPort, mounts);
                     
                     if (containerId.empty()) {
                         // Handle failure (rollback port)
@@ -122,6 +130,12 @@ public:
                     // This is crucial for performCurlRequest later
                     portMapping[job.entityId] = hostPort;
                     containerMap[job.entityId] = containerId;
+                    
+                    // For Tomcat, give it time to deploy the WAR file
+                    if (job.metaData == "SERVER") {
+                        std::cout << "[Docker] Waiting for Tomcat to deploy WAR..." << std::endl;
+                        std::this_thread::sleep_for(std::chrono::seconds(3));
+                    }
 
                     outputQueue.push({job.entityId, true, 0, "Running on Port " + std::to_string(hostPort)});
                     
@@ -141,7 +155,8 @@ public:
                 }
 
                 int port = portMapping[job.targetId];
-                std::string url = "http://localhost:" + std::to_string(port) + "/api/test";
+                // Use root path for Tomcat - works with default servlet and deployed WAR
+                std::string url = "http://localhost:" + std::to_string(port) + "/";
 
                 // 2. Execute in Thread Pool
                 // Capture 'this' and 'job' by value
