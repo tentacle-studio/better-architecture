@@ -39,6 +39,7 @@ vcpkg_installed/
 # Debug files
 *.dSYM/
 *.pdb
+.claude-trace
 
 # MacOS
 .DS_Store

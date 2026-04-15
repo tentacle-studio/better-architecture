@@ -4,353 +4,928 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**Better Architecture** is an educational tower defense game teaching cloud architecture concepts. Players build infrastructure (WAF, Load Balancers, Compute, Database, Cache, etc.) to handle traffic while managing budget and reputation. Built with **Spring Boot backend** (Java 25) + **React frontend** (TypeScript + Three.js), connected via REST API + WebSocket (STOMP).
+**Better Architecture** is an educational desktop tower defense game teaching cloud architecture concepts through real infrastructure simulation. Players build and connect services (Postgres, Redis, NGINX, Load Balancers, API Gateways, Servers) on a grid to handle traffic. Built with **C++17**, **SFML** for graphics, and **Docker** for real container-based infrastructure simulation.
+
+**Tech Stack:**
+- C++17 with CMake 3.21+ build system
+- SFML (Simple Fast Multimedia Library) for rendering and input
+- Docker containers for real infrastructure simulation
+- vcpkg for dependency management
+- libcurl for Docker API communication
+- nlohmann-json for JSON parsing
 
 ## Development Commands
 
+### Prerequisites
+
+Install required tools:
+```bash
+# macOS
+brew install cmake ninja
+
+# Ubuntu/Debian
+sudo apt install cmake ninja-build
+
+# Windows
+# Download CMake from https://cmake.org/download/
+# Download Ninja from https://ninja-build.org/
+```
+
+Install vcpkg for dependency management:
+```bash
+# Clone vcpkg
+git clone https://github.com/microsoft/vcpkg.git
+cd vcpkg
+
+# Bootstrap vcpkg
+./bootstrap-vcpkg.sh  # macOS/Linux
+# or
+bootstrap-vcpkg.bat   # Windows
+
+# Set environment variable
+export VCPKG_ROOT=/path/to/vcpkg
+```
+
+### Building
+
+```bash
+# Configure with default preset
+cmake --preset default
+
+# Or configure for release
+cmake --preset release
+
+# Build (debug)
+cmake --build --preset debug
+
+# Build (release)
+cmake --build --preset release
+```
+
+### Running
+
+```bash
+# Run the game
+./build/bin/better-architecture
+```
+
 ### Quick Start
-```bash
-./start-dev.sh  # Starts both backend (8080) and frontend (5173)
-```
 
-### Backend (Gradle)
+First time setup:
 ```bash
-cd api
-./gradlew bootRun           # Run Spring Boot server
-./gradlew test              # Run JUnit tests
-./gradlew build             # Build JAR artifact
-./gradlew clean build       # Clean build from scratch
-```
+# Install dependencies
+brew install cmake ninja
+git clone https://github.com/microsoft/vcpkg.git
+export VCPKG_ROOT=$(pwd)/vcpkg
+cd vcpkg && ./bootstrap-vcpkg.sh && cd ..
 
-### Frontend (Vite + npm)
-```bash
-cd client
-npm install                 # First time setup
-npm run dev                 # Dev server with HMR
-npm run build               # Production build to dist/
-npm run preview             # Preview production build
+# Build and run
+cmake --preset default
+cmake --build --preset debug
+./build/bin/better-architecture
 ```
 
 ## Architecture Fundamentals
 
 ### Game Loop Pattern (Critical)
 
-The entire game runs on a **scheduled loop at 100ms intervals (10 FPS)** in `api/src/main/java/ocean/studio/BetterArchitecture/GameEngine/GameLoopScheduler.java`:
+The game runs on a **two-thread architecture** with a 60 FPS render loop in `src/Engine/Render/game_engine.cpp`:
 
 ```
-Every 100ms:
-1. Update RPS milestones (traffic scaling)
-2. Trigger random events (DDoS, Cost Spike, etc.)
-3. Generate traffic based on RPS and traffic mix
-4. Process pending requests through service graph
-5. Apply upkeep costs (every 60 seconds)
-6. Broadcast game state via WebSocket
+Main Thread (60 FPS):
+1. Process SFML input events (mouse clicks, keyboard)
+2. Update packet positions and animations (delta time)
+3. Render grid, services, wires, UI, and packets
+4. Push simulation jobs to worker thread queue
+
+Worker Thread (Async):
+1. Pull jobs from SafeQueue
+2. Create/destroy Docker containers for services
+3. Execute simulated requests against containers
+4. Push results back to main thread queue
 ```
 
-**Critical Rule**: All game state mutations happen in the scheduled loop. REST controllers only update flags/configuration, never directly mutate core game state. This prevents race conditions with the concurrent game loop.
+**Critical Rule**: The main thread owns all SFML objects and rendering state. The worker thread manages Docker containers exclusively. Communication happens through thread-safe `SafeQueue<T>` only. Never share mutable state between threads.
+
+**Frame timing**: Each frame targets ~16.6ms (1/60 second). Updates use delta time for smooth animations regardless of frame rate.
 
 ### State Management Architecture
 
-**Backend**: In-memory storage using `ConcurrentHashMap<String, GameState>` in `GameEngineService.java`
-- Thread-safe for concurrent game sessions
-- No persistence - games lost on server restart
-- Each game identified by UUID (e.g., `game-abc123`)
+**In-Process**: C++ objects in memory, no persistence or database
+- GameGrid stores services in a sparse map (efficient for large grids)
+- ServiceEntity objects represent placed infrastructure
+- PacketEntity objects visualize traffic between services
+- All state resets on application restart
 
-**Frontend**: React state synchronized via WebSocket
-- Initial state fetched via REST API
-- Real-time updates via WebSocket subscriptions
-- Local state in `Game.tsx` re-renders on each broadcast
+**Thread Communication**: Producer-consumer pattern via SafeQueue
+- `SafeQueue<SimJob>` - Main thread pushes jobs → Worker pulls
+- `SafeQueue<SimResult>` - Worker pushes results → Main pulls
+- Mutex-protected with `std::queue` and `std::mutex`
 
-**Services Storage**: `Map<String, InfrastructureService>` (not array!) in `GameState.java`
-- Keys are UUIDs like `srv-xxxxxxxx`
-- Serializes to JSON object `{srv-xxx: {...}, srv-yyy: {...}}`
-- Frontend must handle as object, not array
+**Rendering State**: SFML manages window, sprites, and draw calls
+- `sf::RenderWindow` - Main game window at 1920x1080 (configurable)
+- `sf::RectangleShape` - Used for grid cells, services, wires
+- `sf::CircleShape` - Used for packet entities
 
 ### Communication Flow
 
-**REST API** (Initial setup and commands):
+**Thread Communication Pattern**:
 ```
-Client Action → HTTP POST → Spring Controller → GameEngineService → Update GameState flags
+Main Thread                     Worker Thread
+-----------                     -------------
+User clicks service
+  ↓
+Create SimJob {CREATE_CONTAINER, serviceId, type}
+  ↓
+jobQueue.push(job) --------→ jobQueue.pop(job)
+                              ↓
+                            DockerClient.createContainer("postgres:latest")
+                              ↓
+                            resultQueue.push(result)
+                              ↓
+resultQueue.pop(result) ←------
+  ↓
+Update UI to show service active
+  ↓
+Render service on grid
 ```
 
-**WebSocket** (Real-time updates at 10 FPS):
-```
-GameLoopScheduler → SimpMessagingTemplate → /topic/game/{gameId}/state → STOMP Client → React setState
-```
+**No REST API, No WebSocket** - All communication is in-process via thread-safe queues.
 
-**Two-channel pattern**: Commands via REST, state sync via WebSocket. Never mutate state in controllers - only set flags for the game loop to process.
+### Source Code Organization
 
-### Package Organization (Backend)
+Located in `src/`:
 
-Located in `api/src/main/java/ocean/studio/BetterArchitecture/`:
+- **Engine/** - Core game systems
+  - **Render/** - SFML rendering and input handling
+    - `game_engine.hpp` - Main game loop class
+    - `game_engine.cpp` - 60 FPS loop implementation
+  - **Simulation/** - Background worker for Docker containers
+    - `simulation_manager.cpp` - Container lifecycle management
+    - `request_executor.hpp` - Request simulation logic
+    - `thread_pool.hpp` - Concurrent job execution
+    - `packet.hpp` - Packet entity for visualization
+    - `job.h` - Job and Result queue structures
 
-- **GameEngine/** - Core game loop, state management, service operations
-  - `GameLoopScheduler.java` - @Scheduled tasks at 100ms intervals
-  - `GameEngineService.java` - Business logic (traffic routing, service placement)
-  - `GameState.java` - Complete game state (services, economy, events)
+- **Map/** - Game world and UI
+  - **Grid/** - Grid system and service placement
+    - `game_grid.cpp` - Grid state and service management
+    - `service_entity.h` - Service instance structure
+    - `service_entity.cpp` - Service implementation
+    - `sparse_map.h` - Efficient sparse grid storage
+    - `tile_enums.h` - Tile type enumerations
+  - **Sidebar/** - Service selection UI
+    - `sidebar.hpp` - Sidebar UI component
+    - `sidebar.cpp` - Sidebar implementation
+    - `service_types.h` - ServiceType enum
 
-- **Tower/** - Infrastructure services and API layer
-  - `ServiceType.java` - Enum for infrastructure (WAF, ALB, Compute, Database, etc.)
-  - `InfrastructureService.java` - Service entity with health, position, connections
-  - `GameController.java` - REST endpoints for game management
-  - `ServiceController.java` - REST endpoints for service operations
-  - `WebSocketConfig.java` - STOMP/SockJS configuration
+- **Docker/** - Docker integration layer
+  - `docker_client.hpp` - Docker API client (libcurl + Unix socket)
+  - `port_manager.hpp` - Dynamic port allocation
 
-- **Enemy/** - Traffic generation and events
-  - `TrafficType.java` - Enum for traffic (STATIC, READ, WRITE, MALICIOUS, etc.)
-  - `TrafficRequest.java` - Individual request entity
-  - `GameEvent.java` - Random events (DDoS, Cost Spike, Capacity Drop)
-  - `EventManagerService.java` - Event triggering logic
+- **main.cpp** - Entry point, creates GameEngine and calls run()
 
-- **Finance/** - Economy system
-  - `GameEconomy.java` - Budget, reputation, score tracking
-  - `EconomyStats.java` - Income/expense statistics
-
-**Naming Convention**: Packages follow game domain metaphor (Enemy, Tower), not technical layers (controllers, services). When adding features, use game terminology.
-
-### Frontend Structure
-
-Located in `client/src/`:
-
-- **types.ts** - TypeScript interfaces matching backend models
-- **api.ts** - API client with REST methods + WebSocket connection
-- **App.tsx** - Main application with routing (MainMenu vs Game)
-- **Game.tsx** - Game container managing state and WebSocket subscriptions
-- **components/** - React components
-  - `GameCanvas.tsx` - Three.js 3D visualization
-  - `ServiceToolbar.tsx` - Service placement UI
-  - `StatsPanel.tsx`, `HealthPanel.tsx`, `FinancesPanel.tsx` - Game UI
+**Naming Convention**: Packages follow game/engine metaphor (Engine, Map) rather than technical layers. When adding features, prefer domain terminology over generic "utils" or "helpers".
 
 ## Critical Patterns and Gotchas
 
-### 1. Service Placement Flow
-```
-User clicks service → POST /api/service/{gameId}/place {serviceType, position}
-→ Validate budget in GameEngineService
-→ Create InfrastructureService with UUID (srv-xxxxxxxx)
-→ Add to GameState.services map (NOT array)
-→ Immediate WebSocket broadcast
-→ Next game loop tick processes it
-```
+### 1. Docker Container Management
 
-**Gotcha**: Budget check happens server-side. Frontend shows optimistic updates but server may reject if insufficient funds.
+**Pattern**:
+```cpp
+// DockerClient communicates via Unix socket
+// Location: /var/run/docker.sock (Docker Desktop)
+//           ~/.rd/docker.sock (Rancher Desktop)
 
-### 2. Type Synchronization
+DockerClient client;
+std::string containerId = client.createContainer("postgres:latest", 1);
+client.startContainer(containerId);
 
-Backend enums must match frontend TypeScript unions exactly:
-- `ServiceType.java` ↔ `types.ts` ServiceType union
-- `TrafficType.java` ↔ `types.ts` TrafficType union
-- `GameEvent.java` ↔ `types.ts` GameEvent union
-
-When adding new types, update both files and UI representations.
-
-### 3. WebSocket Configuration
-
-- Endpoint: `/ws` with SockJS fallback
-- Topics:
-  - `/topic/game/{gameId}/state` - Full game state (10/sec)
-  - `/topic/game/{gameId}/traffic` - New traffic notifications
-- STOMP protocol over WebSocket
-- Always disconnect on component unmount to prevent memory leaks
-
-**CORS**: Backend allows all origins in dev (`application.properties`). For production, update allowed origins in `WebSocketConfig.java`.
-
-### 4. Game State Timing
-
-Changes may take 1-2 game loop ticks (100-200ms) to reflect:
-- REST call updates flags
-- Next scheduled tick processes changes
-- WebSocket broadcast sends updated state
-- Frontend re-renders
-
-Don't assume instant updates. Frontend should show loading states during operations.
-
-### 5. Event System (Survival Mode Only)
-
-Random events trigger every 15-45 seconds in Survival mode:
-- DDoS waves (50% malicious traffic)
-- Cost spikes (2x upkeep)
-- Capacity drops (50% service capacity)
-- Traffic bursts (3x RPS)
-
-**Gotcha**: Sandbox mode disables events entirely. Always check `game.getMode()` when testing event logic.
-
-### 6. Traffic Routing Logic
-
-Located in `GameEngineService.routeRequest()`:
-```
-1. Find entry point (WAF if present, otherwise first service)
-2. Traverse service connections (BFS)
-3. Check capacity at each hop
-4. Degrade service health based on load
-5. Reach target service or fail
-6. Update economy: success = +reward, failure = -reputation
+// Later...
+client.stopContainer(containerId);
+client.removeContainer(containerId);
 ```
 
-**Gotcha**: MALICIOUS traffic must be blocked by WAF. If it reaches any other service, reputation drops by 5 points per leak.
+**Service Type → Docker Image Mapping** (in `simulation_manager.cpp`):
+- `POSTGRES` → `postgres:latest` (port 5432)
+- `REDIS` → `redis:latest` (port 6379)
+- `NGINX` → `nginx:alpine` (port 80)
+- `LOAD_BALANCER` → `nginx:alpine` (port 80)
+- `API_GATEWAY` → `kong:latest` (port 8000)
+- `SERVER` → `tomcat:9.0-jre11-openjdk-slim` (port 8080)
 
-### 7. Service Health and Repair
+**Gotcha**: Containers persist until explicitly removed. If the game crashes, orphaned containers may remain. Use `docker ps -a` and `docker rm -f $(docker ps -aq)` to clean up.
 
-- Services degrade health under load (100 → 0)
-- Low health reduces capacity proportionally
-- Repair cost = 15% of service placement cost
-- Auto-repair option adds 10% upkeep overhead
+**Gotcha**: Docker socket permissions required. Ensure your user can access the Docker socket without sudo, or the game will fail to create containers.
 
-**Gotcha**: Health degradation is faster under higher load. High RPS requires constant repairs.
+### 2. Thread-Safe Communication
 
-### 8. Services as Map, Not Array
+**Pattern**:
+```cpp
+// SafeQueue is a mutex-protected std::queue wrapper
+template<typename T>
+class SafeQueue {
+    std::queue<T> queue;
+    std::mutex m;
+public:
+    void push(T item) {
+        std::lock_guard<std::mutex> lock(m);
+        queue.push(item);
+    }
+    bool pop(T& item) {
+        std::lock_guard<std::mutex> lock(m);
+        if (queue.empty()) return false;
+        item = queue.front();
+        queue.pop();
+        return true;
+    }
+};
+```
 
-Backend uses `Map<String, InfrastructureService>` which serializes to JSON object:
-```json
-{
-  "srv-abc123": {
-    "id": "srv-abc123",
-    "type": "COMPUTE",
-    "position": {"x": 0, "y": 0}
-  },
-  "srv-def456": {...}
+**Usage**:
+```cpp
+// Main thread (game_engine.cpp)
+SimJob job;
+job.type = JobType::CREATE_CONTAINER;
+job.entityId = serviceId;
+job.metadata = "POSTGRES";
+jobQueue.push(job);
+
+// Worker thread (simulation_manager.cpp)
+SimJob job;
+if (jobQueue.pop(job)) {
+    // Process job...
+    SimResult result;
+    result.success = true;
+    resultQueue.push(result);
 }
 ```
 
-Frontend must use `Object.values(gameState.services)` to iterate, not array methods directly.
+**Gotcha**: Never access SFML objects from the worker thread. SFML is not thread-safe. All rendering must happen on the main thread.
 
-## API Endpoints Reference
+**Gotcha**: Queue operations are atomic, but multi-step operations are not. If you need to check-then-push, use a separate mutex or atomic flag.
 
-### Game Management
-- `POST /api/game/create` - Create game with mode and config
-- `GET /api/game/{gameId}` - Fetch current game state
-- `POST /api/game/{gameId}/pause` - Pause game loop
-- `POST /api/game/{gameId}/resume` - Resume game loop
-- `POST /api/game/{gameId}/auto-repair` - Toggle auto-repair mode
-- `POST /api/game/{gameId}/traffic-mix` - Update traffic distribution (Sandbox)
+### 3. Service Placement Flow
 
-### Service Management
-- `POST /api/service/{gameId}/place` - Place service with type and position
-- `DELETE /api/service/{gameId}/remove/{serviceId}` - Remove service (50% refund)
-- `POST /api/service/{gameId}/connect` - Connect two services for traffic flow
-- `POST /api/service/{gameId}/repair/{serviceId}` - Repair service health
+**Flow**:
+```
+User clicks service in sidebar
+  ↓
+selectedServiceType = POSTGRES
+currentState = DRAGGING_GHOST
+  ↓
+Mouse moves over grid
+  ↓
+ghostSprite.setPosition(mouseGridPos) // Visual feedback
+  ↓
+User clicks on grid cell
+  ↓
+GameGrid::placeService(serviceType, gridPos)
+  ↓
+Create ServiceEntity with UUID (srv-xxxxxxxx)
+  ↓
+Push CREATE_CONTAINER job to worker thread
+  ↓
+Worker creates Docker container
+  ↓
+Result pushed back to main thread
+  ↓
+Service marked as active, rendered on grid
+```
 
-### WebSocket
-- Connect: `/ws` (SockJS endpoint)
-- Subscribe: `/topic/game/{gameId}/state` (game state updates)
-- Subscribe: `/topic/game/{gameId}/traffic` (new traffic notifications)
+**Gotcha**: Service placement is optimistic. The UI shows the service immediately, but container creation happens asynchronously. Check result queue to handle failures.
+
+### 4. SFML Rendering Pipeline
+
+**Render Order** (in `game_engine.cpp`):
+```cpp
+void GameEngine::render() {
+    window.clear(sf::Color::Black);
+
+    // 1. Grid background
+    grid.render(window);
+
+    // 2. Wires between services
+    for (auto& wire : wires) {
+        window.draw(wire);
+    }
+
+    // 3. Services (on top of wires)
+    for (auto& service : services) {
+        window.draw(service.sprite);
+    }
+
+    // 4. Packets (animated traffic)
+    for (auto& packet : activePackets) {
+        window.draw(packet.shape);
+    }
+
+    // 5. UI (sidebar, stats)
+    sidebar.render(window);
+
+    window.display();
+}
+```
+
+**Gotcha**: Draw order matters. Objects drawn later appear on top. If wires appear above services, check draw order.
+
+**Gotcha**: SFML coordinates are top-left origin. Grid coordinates (0,0) map to screen coordinates based on cell size (e.g., 64x64 pixels per cell).
+
+### 5. Packet Visualization System
+
+**Pattern**:
+```cpp
+// Packets spawn every PACKET_SPAWN_INTERVAL seconds
+if (packetSpawnTimer >= PACKET_SPAWN_INTERVAL) {
+    spawnPacket(sourceServiceId, targetServiceId);
+    packetSpawnTimer = 0.f;
+}
+
+// Packets move along wires
+void updatePackets(float dt) {
+    for (auto& packet : activePackets) {
+        packet.progress += packet.speed * dt;
+        if (packet.progress >= 1.0f) {
+            // Packet arrived at target
+            handlePacketArrival(packet);
+        }
+    }
+}
+```
+
+**Gotcha**: Packets are purely visual. They don't represent actual requests yet (see `TODO.txt` for planned features).
+
+### 6. Wiring System
+
+**Two Modes** (in `game_engine.hpp`):
+- `CLICK_AND_DRAG` - User clicks source, drags to target, releases to connect
+- `PATHFINDING_BFS` - Automatic pathfinding finds shortest path between services
+
+**Gotcha**: Wires are directional. Traffic flows from source to target only. To enable bidirectional traffic, create two wires.
+
+### 7. Service Types and Enums
+
+**Definition** in `service_types.h`:
+```cpp
+enum class ServiceType {
+    NONE,
+    POSTGRES,
+    REDIS,
+    NGINX,
+    LOAD_BALANCER,
+    API_GATEWAY,
+    SERVER,
+};
+```
+
+**Gotcha**: `NONE` is used for empty grid cells and uninitialized state. Always check `type != ServiceType::NONE` before processing.
+
+**Gotcha**: When adding new service types, update BOTH the enum AND the Docker image mapping in `simulation_manager.cpp`.
+
+### 8. Game State Management
+
+**States** (in `game_engine.hpp`):
+```cpp
+enum class GameState {
+    EDITING,           // Placing/removing services
+    SIMULATING,        // Game running, packets moving
+    IDLE,              // No interaction
+    DRAGGING_GHOST,    // Dragging service ghost before placement
+    WIRING             // Connecting services with wires
+};
+```
+
+**Gotcha**: Some operations are only valid in certain states. For example, can't place services while SIMULATING.
+
+## Class and Function Reference
+
+### GameEngine Class
+
+**Location**: `src/Engine/Render/game_engine.hpp`
+
+**Key Methods**:
+- `run()` - Main entry point, starts render loop at 60 FPS
+- `processInput()` - Handles keyboard/mouse events
+- `update(float dt)` - Updates game logic (packets, animations)
+- `render()` - Draws everything to window
+- `simulationWorker()` - Worker thread function for Docker management
+
+**Key Members**:
+- `sf::RenderWindow window` - SFML window (1920x1080 default)
+- `GameGrid grid` - Grid state and services
+- `Sidebar sidebar` - Service selection UI
+- `SafeQueue<SimJob> jobQueue` - Jobs for worker thread
+- `SafeQueue<SimResult> resultQueue` - Results from worker thread
+
+### GameGrid Class
+
+**Location**: `src/Map/Grid/game_grid.cpp`
+
+**Key Methods**:
+- `placeService(ServiceType, GridIndex)` - Place service at grid position
+- `removeService(GridIndex)` - Remove service from grid
+- `getService(GridIndex)` - Get service at position (or nullptr)
+- `render(sf::RenderWindow&)` - Draw grid and services
+
+**Key Members**:
+- `SparseMap<ServiceEntity> services` - Efficient sparse grid storage
+- `int cellSize` - Pixel size of each grid cell (64x64 default)
+
+### DockerClient Class
+
+**Location**: `src/Docker/docker_client.hpp`
+
+**Key Methods**:
+- `createContainer(string image, int instanceId)` - Create container from image
+- `startContainer(string containerId)` - Start stopped container
+- `stopContainer(string containerId)` - Stop running container
+- `removeContainer(string containerId)` - Remove container
+- `getContainerPort(string containerId, int internalPort)` - Get mapped host port
+
+**Implementation Details**:
+- Uses libcurl to communicate with Docker Unix socket
+- Sends raw HTTP requests (POST, DELETE) to Docker API v1.41
+- Parses JSON responses with nlohmann-json
+
+### SimulationManager Class
+
+**Location**: `src/Engine/Simulation/simulation_manager.cpp`
+
+**Key Methods**:
+- `run()` - Worker thread main loop
+- `processJob(SimJob&)` - Handle job from main thread
+- `handleCreateContainer(SimJob&)` - Create Docker container
+- `handleDestroyContainer(SimJob&)` - Stop and remove container
+- `handleExecuteRequest(SimJob&)` - Execute simulated request
+
+**Key Members**:
+- `DockerClient docker` - Docker API client
+- `PortManager portManager` - Dynamic port allocation
+- `map<string, string> containerMap` - GameEntityID → Docker ContainerID
 
 ## Adding New Features
 
 ### Adding a New Service Type
 
-1. **Backend**: Update `ServiceType.java` enum
-```java
-NEW_SERVICE("Display Name", cost, capacity, upkeep, "Description")
-```
-
-2. **Frontend**: Update `types.ts` and SERVICE_INFO map
-```typescript
-export type ServiceType = 'WAF' | 'ALB' | ... | 'NEW_SERVICE';
-export const SERVICE_INFO = {
-  NEW_SERVICE: { name: '...', cost: ..., emoji: '...' }
+1. **Add to enum** in `src/Map/Sidebar/service_types.h`:
+```cpp
+enum class ServiceType {
+    NONE,
+    POSTGRES,
+    REDIS,
+    NGINX,
+    LOAD_BALANCER,
+    API_GATEWAY,
+    SERVER,
+    ELASTICSEARCH,  // New service type
 };
 ```
 
-3. **Routing Logic**: Update `GameEngineService.routeRequest()` if service has special routing behavior
+2. **Add Docker image mapping** in `src/Engine/Simulation/simulation_manager.cpp`:
+```cpp
+std::string getDockerImageForService(const std::string& serviceTypeStr) {
+    if (serviceTypeStr == "POSTGRES") return "postgres:latest";
+    if (serviceTypeStr == "REDIS") return "redis:latest";
+    // ... existing mappings
+    if (serviceTypeStr == "ELASTICSEARCH") return "elasticsearch:8.11.0";
+    return "nginx:alpine"; // Default
+}
+```
 
-4. **UI**: Add to `ServiceToolbar.tsx` for visual representation
+3. **Add port mapping**:
+```cpp
+int getInternalPortForImage(std::string imageName) {
+    if (imageName.find("postgres") != std::string::npos) return 5432;
+    // ... existing mappings
+    if (imageName.find("elasticsearch") != std::string::npos) return 9200;
+    return 80; // Default
+}
+```
 
-### Adding a New Traffic Type
+4. **Add to sidebar UI** in `src/Map/Sidebar/sidebar.cpp`:
+```cpp
+// Add button and visual representation
+void Sidebar::addServiceButton(ServiceType::ELASTICSEARCH,
+                                "Elasticsearch",
+                                sf::Color(0, 150, 136));
+```
 
-1. **Backend**: Add to `TrafficType.java` enum with target and reward
-2. **Frontend**: Add to `types.ts` and TRAFFIC_INFO map with color
-3. **Game Balance**: Update default traffic mix in `GameState.getDefaultTrafficMix()`
+5. **Rebuild**:
+```bash
+cmake --build --preset debug
+```
 
-### Adding a New Game Event
+### Adding a New Game Mode
 
-1. **Backend**: Add to `GameEvent.java` enum
-2. **Logic**: Implement effect in `EventManagerService.applyEventEffect()` and `removeEventEffect()`
-3. **Frontend**: Event automatically displays in EventBar component
+1. **Add to GameState enum** in `src/Engine/Render/game_engine.hpp`:
+```cpp
+enum class GameState {
+    EDITING,
+    SIMULATING,
+    IDLE,
+    DRAGGING_GHOST,
+    WIRING,
+    MY_NEW_MODE,  // New mode
+};
+```
+
+2. **Handle mode in input processing**:
+```cpp
+void GameEngine::processInput() {
+    if (currentState == GameState::MY_NEW_MODE) {
+        // Handle inputs for new mode
+    }
+}
+```
+
+3. **Update rendering** if mode requires visual changes:
+```cpp
+void GameEngine::render() {
+    // ... existing rendering
+    if (currentState == GameState::MY_NEW_MODE) {
+        // Render mode-specific UI
+    }
+}
+```
+
+### Adding a New Packet Effect
+
+1. **Modify PacketEntity** in `src/Engine/Simulation/packet.hpp`:
+```cpp
+struct PacketEntity {
+    std::string id;
+    std::string sourceId;
+    std::string targetId;
+    float progress;  // 0.0 to 1.0
+    sf::CircleShape shape;
+    sf::Color color;  // Add color for different packet types
+    PacketType type;  // Add enum for packet types
+};
+```
+
+2. **Update spawn logic**:
+```cpp
+void GameEngine::spawnPacket(const std::string& sourceId,
+                             const std::string& targetId,
+                             PacketType type) {
+    PacketEntity packet;
+    packet.type = type;
+    // Set color based on type
+    packet.color = getColorForPacketType(type);
+    packet.shape.setFillColor(packet.color);
+    // ... rest of initialization
+}
+```
 
 ## Testing and Debugging
 
-### Backend Testing
-```bash
-cd api
-./gradlew test  # Run JUnit tests
-```
-
-**Test coverage areas**:
-- Service placement and budget validation
-- Traffic routing through service graph
-- Economy calculations (income, upkeep, refunds)
-- Event triggering and effects
-
-### Frontend Testing
-Currently no test framework configured. To add:
-```bash
-npm install -D vitest @testing-library/react @testing-library/jest-dom
-```
-
 ### Manual Testing Strategy
 
-Use **Sandbox mode** with high budget ($10,000+) to test mechanics in isolation:
-- Disable events to test specific features
-- Manually control traffic mix
-- No game over conditions for long-running tests
+**Testing Service Placement**:
+1. Run game: `./build/bin/better-architecture`
+2. Click service in sidebar
+3. Click on grid to place
+4. Verify container created: `docker ps`
+5. Check container logs: `docker logs <container_id>`
+
+**Testing Wiring**:
+1. Place two services
+2. Press 'W' key to enter wiring mode
+3. Click source service
+4. Click target service
+5. Verify wire drawn between them
+
+**Testing Packet Flow**:
+1. Wire two services together
+2. Wait for packet spawn (2 seconds)
+3. Verify packet moves along wire
+4. Check packet arrives at target
 
 ### Debugging Tips
 
-**Console Logging**: Both backend and frontend are verbose with emoji-prefixed logs:
-- Backend: Check terminal running `./gradlew bootRun`
-- Frontend: Browser console (F12)
+**SFML Window Debug**:
+- Add debug overlays: `window.draw(debugText);`
+- Print mouse position: `sf::Mouse::getPosition(window)`
+- Check frame rate: measure time between frames
 
-**WebSocket Inspection**:
-1. Browser DevTools → Network tab → WS filter
-2. See STOMP frames being sent/received
-3. Verify state updates at 10 FPS
+**Docker Container Debug**:
+```bash
+# List running containers
+docker ps
 
-**Game State Inspection**:
-- Add breakpoints in `GameLoopScheduler.gameLoop()` for backend
-- Add `console.log(gameState)` in `Game.tsx` for frontend
-- Use React DevTools to inspect component state
+# View container logs
+docker logs <container_id>
+
+# Inspect container
+docker inspect <container_id>
+
+# Test container connectivity
+curl localhost:<mapped_port>
+```
+
+**Thread Safety Debug**:
+- Add logging with thread ID: `std::this_thread::get_id()`
+- Use thread sanitizer: `cmake -DCMAKE_CXX_FLAGS="-fsanitize=thread"`
+- Check for data races with valgrind: `valgrind --tool=helgrind`
+
+**Console Logging**:
+The fmt library provides colored output:
+```cpp
+#include <fmt/color.h>
+fmt::print(fg(fmt::color::green), "Service placed successfully\n");
+fmt::print(fg(fmt::color::red), "Error: {}\n", errorMsg);
+```
+
+**Breakpoints** (GDB/LLDB):
+```bash
+# Build with debug symbols
+cmake --preset debug
+cmake --build --preset debug
+
+# Run with debugger
+lldb ./build/bin/better-architecture
+
+# Set breakpoint
+(lldb) b game_engine.cpp:123
+
+# Run
+(lldb) run
+```
+
+**Common Issues**:
+
+1. **"Failed to create Docker container"**
+   - Check Docker daemon running: `docker ps`
+   - Check socket permissions: `ls -la /var/run/docker.sock`
+   - Try with sudo (temporary): `sudo ./build/bin/better-architecture`
+
+2. **Black screen / No rendering**
+   - Check SFML installation: `brew list sfml`
+   - Verify window created: Add `fmt::print("Window created\n");`
+   - Check for exception in terminal output
+
+3. **Segfault on startup**
+   - Run with debugger to get stack trace
+   - Check for null pointer dereferences
+   - Verify all resources loaded correctly
+
+4. **Services not appearing**
+   - Check jobQueue successfully pushing: Add logging
+   - Verify worker thread running: Add thread ID log
+   - Check resultQueue being polled by main thread
 
 ## Configuration Files
 
-- Backend port and CORS: `api/src/main/resources/application.properties`
-- Java version and dependencies: `api/build.gradle` (currently Java 25)
-- Frontend API URL: `client/vite.config.ts` proxy config
-- TypeScript config: `client/tsconfig.json`
-- Frontend environment: `client/.env` (VITE_API_URL)
+### CMakeLists.txt
+
+**Location**: `CMakeLists.txt`
+
+Main build configuration:
+```cmake
+cmake_minimum_required(VERSION 3.21)
+project(BetterArchitecture VERSION 1.0.0)
+
+set(CMAKE_CXX_STANDARD 17)
+
+# Find dependencies (via vcpkg)
+find_package(fmt CONFIG REQUIRED)
+find_package(SFML COMPONENTS Graphics REQUIRED)
+find_package(curl CONFIG REQUIRED)
+find_package(nlohmann_json CONFIG REQUIRED)
+
+# Create executable
+add_executable(better-architecture
+    src/main.cpp
+    src/Map/Grid/game_grid.cpp
+    src/Map/Grid/service_entity.cpp
+    src/Map/Sidebar/sidebar.cpp
+    src/Engine/Render/game_engine.cpp
+)
+
+# Link libraries
+target_link_libraries(better-architecture PRIVATE
+    fmt::fmt
+    SFML::Graphics
+    CURL::libcurl
+    nlohmann_json::nlohmann_json
+)
+```
+
+**Adding a new source file**: Add to `add_executable()` list.
+**Adding a new dependency**: Add `find_package()` and link in `target_link_libraries()`.
+
+### CMakePresets.json
+
+**Location**: `CMakePresets.json`
+
+Presets for different build configurations:
+- `default` - Debug build with vcpkg toolchain
+- `debug` - Alias for default
+- `release` - Release build with optimizations (-O3)
+
+**Usage**:
+```bash
+cmake --preset release
+cmake --build --preset release
+```
+
+### vcpkg.json
+
+**Location**: `vcpkg.json`
+
+Dependency manifest:
+```json
+{
+  "name": "better-architecture",
+  "version": "1.0.0",
+  "dependencies": [
+    "fmt",
+    "nlohmann-json",
+    "sfml",
+    "curl"
+  ]
+}
+```
+
+**Adding a dependency**:
+1. Search for package: `$VCPKG_ROOT/vcpkg search <name>`
+2. Add to dependencies array
+3. Reconfigure: `cmake --preset default`
+
+### vcpkg-configuration.json
+
+**Location**: `vcpkg-configuration.json`
+
+vcpkg registry configuration (usually no changes needed).
 
 ## Performance Considerations
 
-**Game Loop**: Runs at 100ms (10 FPS) for all active games
-- Each tick processes all games in ConcurrentHashMap
-- Estimated capacity: 100-1000 concurrent games depending on hardware
-- Consider reducing tick rate for slower environments
+### Rendering Performance
 
-**WebSocket Broadcast**: Full state sent 10 times per second
-- Average state size: ~2-5KB per game
-- For 100 games: ~20-50KB/sec bandwidth
-- Consider delta updates for production scaling
+**Target**: 60 FPS (16.6ms per frame)
 
-**Three.js Rendering**: Frontend only re-renders when state changes
-- Use memoization for expensive calculations
-- Consider LOD (Level of Detail) for many services
+**Bottlenecks**:
+- Too many draw calls (each service, wire, packet is a draw call)
+- Inefficient sprite batching (SFML draws individually by default)
+- Excessive state changes (texture switching, shader changes)
+
+**Optimizations**:
+- Use `sf::VertexArray` to batch multiple rectangles into one draw call
+- Limit visible area (don't render off-screen services)
+- Use `sf::RenderTexture` to cache static elements
+
+**Profiling**:
+```cpp
+auto start = std::chrono::high_resolution_clock::now();
+render();
+auto end = std::chrono::high_resolution_clock::now();
+auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+fmt::print("Render time: {}ms\n", duration.count());
+```
+
+### Docker Container Performance
+
+**Limits**:
+- Each container uses ~50-200MB RAM depending on image
+- Container startup takes 1-5 seconds depending on image size
+- macOS Docker Desktop has overhead vs. native Linux
+
+**Optimizations**:
+- Use Alpine-based images (smaller, faster startup)
+- Reuse stopped containers instead of removing and recreating
+- Limit concurrent container operations
+- Pre-pull images: `docker pull postgres:latest`
+
+**Estimated Capacity**:
+- Development machine: 10-20 services
+- High-end workstation: 50-100 services
+- Beyond 100 services, consider container pooling or mocking
+
+### Thread Communication Performance
+
+**SafeQueue Overhead**:
+- Mutex lock/unlock per operation: ~50-100ns
+- Negligible for typical game rates (10-60 jobs/second)
+
+**Optimizations**:
+- Batch multiple jobs into one push
+- Use lock-free queues for extreme performance (boost::lockfree::queue)
+- Avoid queue operations in hot loops
 
 ## Deployment Notes
 
-**Backend**:
+### Building for Release
+
 ```bash
-./gradlew build
-java -jar build/libs/BetterArchitecture-0.0.1-SNAPSHOT.jar
+# Configure for release
+cmake --preset release
+
+# Build with optimizations
+cmake --build --preset release
+
+# Executable location
+./build/bin/better-architecture
 ```
 
-**Frontend**:
+### Distribution
+
+**macOS**:
+1. Build release binary
+2. Copy SFML frameworks to app bundle (or use static linking)
+3. Sign application: `codesign -s "Developer ID" better-architecture`
+4. Create DMG: `hdiutil create -volname BetterArchitecture -srcfolder build/bin -format UDZO BetterArchitecture.dmg`
+
+**Linux**:
+1. Build release binary
+2. Bundle SFML shared libraries with AppImage
+3. Use LinuxDeploy: `linuxdeploy --executable=better-architecture --appdir=AppDir --output=appimage`
+
+**Windows**:
+1. Build release binary with MSVC
+2. Copy SFML DLLs to executable directory
+3. Create installer with NSIS or WiX
+
+### System Requirements
+
+**Minimum**:
+- OS: macOS 10.15+, Ubuntu 20.04+, Windows 10
+- CPU: Dual-core 2.0 GHz
+- RAM: 4GB
+- GPU: Integrated graphics with OpenGL 3.3
+- Disk: 500MB
+- Docker: Docker Desktop or equivalent
+
+**Recommended**:
+- OS: macOS 13+, Ubuntu 22.04+, Windows 11
+- CPU: Quad-core 3.0 GHz
+- RAM: 8GB
+- GPU: Dedicated GPU with OpenGL 4.5
+- Disk: 2GB (for Docker images)
+- Docker: Docker Desktop 4.0+
+
+### Docker Setup for End Users
+
+Users must have Docker installed and running:
+
+**macOS**:
 ```bash
-npm run build  # Outputs to dist/
-# Deploy dist/ folder to static hosting
+brew install --cask docker
+# Or download Docker Desktop from docker.com
 ```
 
-**Environment Setup**:
-- Update `VITE_API_URL` in `.env.production`
-- Configure WebSocket allowed origins for production domain
-- Ensure load balancer supports WebSocket sticky sessions
-- Consider Redis/database for multi-instance deployment (currently single-instance only)
+**Linux**:
+```bash
+curl -fsSL https://get.docker.com -o get-docker.sh
+sh get-docker.sh
+sudo usermod -aG docker $USER
+```
+
+**Windows**:
+```
+Download Docker Desktop from docker.com
+Enable WSL2 backend
+```
+
+**Socket Path Configuration**:
+- Update `docker_client.hpp` `SOCKET_PATH` if using non-standard Docker installation
+- Default: `/var/run/docker.sock` (Docker Desktop)
+- Rancher Desktop: `~/.rd/docker.sock`
+- Podman: `XDG_RUNTIME_DIR/podman/podman.sock`
+
+## Project Status and Roadmap
+
+**Current Status**: Restructured from Spring Boot + React to C++ + SFML architecture (Dec 29, 2025)
+
+**Completed**:
+- Two-thread architecture (render + simulation worker)
+- SFML rendering with grid, sidebar, and packet visualization
+- Docker integration for real container management
+- Service placement and wiring system
+- Dynamic port management
+
+**In Progress** (see `TODO.txt`):
+- Request path calculation between services
+- Network latency simulation
+- Response handling from containers
+
+**Future Roadmap**:
+- Budget and reputation mechanics (ported from old architecture)
+- Health and repair system (ported from old architecture)
+- Traffic types (STATIC, READ, WRITE, MALICIOUS)
+- Random events (DDoS, Cost Spike, Capacity Drop)
+- Game modes (Sandbox vs. Survival)
+- Save/load game state
+- Performance metrics dashboard
+
+## Additional Resources
+
+**External Documentation**:
+- [SFML Documentation](https://www.sfml-dev.org/documentation/)
+- [Docker API Reference](https://docs.docker.com/engine/api/)
+- [CMake Documentation](https://cmake.org/documentation/)
+- [vcpkg Documentation](https://vcpkg.io/en/docs/)
+
+**Learning Resources**:
+- [SFML Game Development Book](https://www.packtpub.com/product/sfml-game-development/9781849696845)
+- [C++ Concurrency in Action](https://www.manning.com/books/c-plus-plus-concurrency-in-action-second-edition)
+- [Docker for Developers](https://www.docker.com/resources/what-container/)

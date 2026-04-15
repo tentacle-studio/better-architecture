@@ -2,3 +2,5 @@
 - Review and check network latency
 - Review the dynamic port mapping (lgtm)
 - Review response from server after handling request
+- Load environment variables instead of hardcoding
+- Create a docker image for server service (java, python, nodejs) and publish in Dockerhub
