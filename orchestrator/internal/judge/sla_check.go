@@ -2,18 +2,21 @@ package judge
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/tentacle-studio/better-architecture/orchestrator/internal/k8s"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/metric"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 type SLAChecker struct {
-	k8sClient *k8s.Client
+	k8sClient     *k8s.Client
+	prometheusURL string
 }
 
 type SLACheckSpec struct {
@@ -23,11 +26,16 @@ type SLACheckSpec struct {
 	MinSuccessRate    float64 `json:"min_success_rate"`
 	ObservationWindow int32   `json:"observation_window_seconds"`
 	Points            int32   `json:"points"`
+	Service           string  `json:"service"`
+	Metric            string  `json:"metric"`
+	Threshold         float64 `json:"threshold"`
+	SampleDuration    int32   `json:"sample_duration_s"`
 }
 
-func NewSLAChecker(k8sClient *k8s.Client) *SLAChecker {
+func NewSLAChecker(k8sClient *k8s.Client, prometheusURL string) *SLAChecker {
 	return &SLAChecker{
-		k8sClient: k8sClient,
+		k8sClient:     k8sClient,
+		prometheusURL: prometheusURL,
 	}
 }
 
@@ -35,114 +43,129 @@ func (c *SLAChecker) Check(ctx context.Context, sandboxID string, spec SLACheckS
 	result := CheckResult{
 		CheckName: spec.Name,
 		Points:    spec.Points,
-		Passed:    false,
 	}
 
-	metrics, err := c.queryOTelMetrics(ctx, spec)
-	if err != nil {
-		result.Message = fmt.Sprintf("Failed to query OTel metrics: %v", err)
+	if c.prometheusURL == "" {
+		result.Message = "prometheus URL not configured, SLA check skipped"
 		return result, nil
 	}
 
-	if c.meetsLatencySLA(metrics, spec.MaxLatencyMs) && c.meetsSuccessRateSLA(metrics, spec.MinSuccessRate) {
+	p95, found, err := c.queryP95Latency(ctx, sandboxID, spec)
+	if err != nil {
+		result.Message = fmt.Sprintf("failed to query metrics: %v", err)
+		return result, nil
+	}
+
+	if !found {
+		result.Message = "no metrics found for the given service and time window"
+		return result, nil
+	}
+
+	threshold := spec.Threshold
+	if threshold == 0 {
+		threshold = spec.MaxLatencyMs
+	}
+
+	if p95 <= threshold {
 		result.Passed = true
-		result.Message = "SLA requirements met"
+		result.Message = fmt.Sprintf("p95 latency %.2fms is within threshold %.2fms", p95, threshold)
 	} else {
-		result.Message = fmt.Sprintf("SLA requirements not met. Latency: %.2fms, Success rate: %.2f%%",
-			metrics.AvgLatencyMs, metrics.SuccessRate*100)
+		result.Message = fmt.Sprintf("p95 latency %.2fms exceeds threshold %.2fms", p95, threshold)
 	}
 
 	return result, nil
 }
 
+type prometheusResponse struct {
+	Status string `json:"status"`
+	Data   struct {
+		ResultType string `json:"resultType"`
+		Result     []struct {
+			Metric map[string]string `json:"metric"`
+			Value  []json.RawMessage `json:"value"`
+		} `json:"result"`
+	} `json:"data"`
+}
+
+func (c *SLAChecker) queryP95Latency(ctx context.Context, sandboxID string, spec SLACheckSpec) (float64, bool, error) {
+	service := spec.Service
+	if service == "" {
+		service = spec.MetricName
+	}
+
+	sampleDuration := spec.SampleDuration
+	if sampleDuration == 0 {
+		sampleDuration = spec.ObservationWindow
+	}
+	if sampleDuration == 0 {
+		sampleDuration = 30
+	}
+
+	query := fmt.Sprintf(
+		`histogram_quantile(0.95, rate(http_request_duration_ms_bucket{namespace=%q,service=%q}[%ds]))`,
+		sandboxID, service, sampleDuration,
+	)
+
+	return c.queryPrometheus(ctx, query)
+}
+
+func (c *SLAChecker) queryPrometheus(ctx context.Context, query string) (float64, bool, error) {
+	reqURL := fmt.Sprintf("%s/api/v1/query?query=%s",
+		strings.TrimRight(c.prometheusURL, "/"),
+		url.QueryEscape(query),
+	)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
+	if err != nil {
+		return 0, false, fmt.Errorf("create prometheus request: %w", err)
+	}
+
+	httpClient := &http.Client{Timeout: 10 * time.Second}
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return 0, false, fmt.Errorf("query prometheus: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return 0, false, fmt.Errorf("read prometheus response: %w", err)
+	}
+
+	var promResp prometheusResponse
+	if err := json.Unmarshal(body, &promResp); err != nil {
+		return 0, false, fmt.Errorf("parse prometheus response: %w", err)
+	}
+
+	if promResp.Status != "success" {
+		return 0, false, fmt.Errorf("prometheus query returned status: %s", promResp.Status)
+	}
+
+	if len(promResp.Data.Result) == 0 {
+		return 0, false, nil
+	}
+
+	result := promResp.Data.Result[0]
+	if len(result.Value) < 2 {
+		return 0, false, fmt.Errorf("unexpected prometheus value format")
+	}
+
+	var valueStr string
+	if err := json.Unmarshal(result.Value[1], &valueStr); err != nil {
+		return 0, false, fmt.Errorf("parse prometheus value: %w", err)
+	}
+
+	value, err := strconv.ParseFloat(valueStr, 64)
+	if err != nil {
+		return 0, false, fmt.Errorf("convert prometheus value %q to float: %w", valueStr, err)
+	}
+
+	return value, true, nil
+}
+
 type OTelMetrics struct {
 	AvgLatencyMs float64
 	SuccessRate  float64
-}
-
-func (c *SLAChecker) queryOTelMetrics(ctx context.Context, spec SLACheckSpec) (*OTelMetrics, error) {
-	meter := otel.Meter("orchestrator-judge")
-
-	latencyHistogram, err := meter.Float64Histogram(
-		fmt.Sprintf("%s.latency", spec.MetricName),
-		metric.WithDescription("Request latency in milliseconds"),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create latency histogram: %w", err)
-	}
-
-	successCounter, err := meter.Int64Counter(
-		fmt.Sprintf("%s.success", spec.MetricName),
-		metric.WithDescription("Successful requests"),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create success counter: %w", err)
-	}
-
-	totalCounter, err := meter.Int64Counter(
-		fmt.Sprintf("%s.total", spec.MetricName),
-		metric.WithDescription("Total requests"),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create total counter: %w", err)
-	}
-
-	_ = latencyHistogram
-	_ = successCounter
-	_ = totalCounter
-
-	observationStart := time.Now().Add(-time.Duration(spec.ObservationWindow) * time.Second)
-	_ = observationStart
-
-	metrics := &OTelMetrics{
-		AvgLatencyMs: 0.0,
-		SuccessRate:  1.0,
-	}
-
-	podList, err := c.k8sClient.Clientset.CoreV1().Pods("").List(ctx, metav1.ListOptions{
-		LabelSelector: fmt.Sprintf("metric=%s", spec.MetricName),
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to list pods for metric collection: %w", err)
-	}
-
-	if len(podList.Items) == 0 {
-		return metrics, nil
-	}
-
-	var totalLatency float64
-	var successCount int64
-	var totalCount int64
-
-	for _, pod := range podList.Items {
-		if latencyStr, ok := pod.Annotations["latency_ms"]; ok {
-			var latency float64
-			fmt.Sscanf(latencyStr, "%f", &latency)
-			totalLatency += latency
-			totalCount++
-		}
-
-		if statusStr, ok := pod.Annotations["status"]; ok {
-			totalCount++
-			if statusStr == "success" {
-				successCount++
-			}
-		}
-	}
-
-	if totalCount > 0 {
-		metrics.AvgLatencyMs = totalLatency / float64(totalCount)
-		metrics.SuccessRate = float64(successCount) / float64(totalCount)
-	}
-
-	attrs := []attribute.KeyValue{
-		attribute.String("metric_name", spec.MetricName),
-		attribute.Float64("avg_latency_ms", metrics.AvgLatencyMs),
-		attribute.Float64("success_rate", metrics.SuccessRate),
-	}
-	_ = attrs
-
-	return metrics, nil
 }
 
 func (c *SLAChecker) meetsLatencySLA(metrics *OTelMetrics, maxLatency float64) bool {

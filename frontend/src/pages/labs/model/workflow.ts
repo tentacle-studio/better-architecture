@@ -54,6 +54,9 @@ interface WorkflowState {
   // actions
   selectNode: (id: string | null) => void
   moveNode: (id: string, x: number, y: number) => void
+  addNode: (node: WorkflowNode) => void
+  removeNode: (id: string) => void
+  updateNodeStatus: (id: string, status: string) => void
   addEdge: (edge: WorkflowEdge) => void
   removeEdge: (id: string) => void
   setPendingConnection: (conn: PendingConnection | null) => void
@@ -211,6 +214,19 @@ export const useWorkflowStore = create<WorkflowState>((set) => ({
 
   moveNode: (id, x, y) => set((s) => ({
     nodes: s.nodes.map((n) => n.id === id ? { ...n, x, y } : n),
+  })),
+
+  addNode: (node) => set((s) => (
+    s.nodes.find((n) => n.id === node.id) ? s : { nodes: [...s.nodes, node] }
+  )),
+
+  removeNode: (id) => set((s) => ({
+    nodes: s.nodes.filter((n) => n.id !== id),
+    edges: s.edges.filter((e) => e.sourceNodeId !== id && e.targetNodeId !== id),
+  })),
+
+  updateNodeStatus: (id, status) => set((s) => ({
+    nodes: s.nodes.map((n) => n.id === id ? { ...n, sublabel: status } : n),
   })),
 
   addEdge: (edge) => set((s) => ({ edges: [...s.edges, edge] })),

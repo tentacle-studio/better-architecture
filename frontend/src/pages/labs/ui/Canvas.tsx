@@ -1,5 +1,5 @@
 import { useEffect, useRef, useCallback } from "react"
-import { useWorkflowStore, generateEdgeId, type WorkflowNode, type WorkflowEdge } from "../model/workflow"
+import { useWorkflowStore, generateEdgeId, type WorkflowNode } from "../model/workflow"
 
 // ─── Layout constants ──────────────────────────────────────────────────────────
 const NODE_WIDTH = 200
@@ -37,16 +37,6 @@ function cubicBezierPoint(p0x: number, p0y: number, p1x: number, p1y: number,
   }
 }
 
-function bezierLength(p0x: number, p0y: number, p1x: number, p1y: number,
-  p2x: number, p2y: number, p3x: number, p3y: number, steps = 30) {
-  let len = 0, prev = { x: p0x, y: p0y }
-  for (let i = 1; i <= steps; i++) {
-    const pt = cubicBezierPoint(p0x, p0y, p1x, p1y, p2x, p2y, p3x, p3y, i / steps)
-    len += Math.hypot(pt.x - prev.x, pt.y - prev.y)
-    prev = pt
-  }
-  return len
-}
 
 // ─── Port position computation ─────────────────────────────────────────────────
 function getPortPosition(node: WorkflowNode, portId: string, portType: "input" | "output") {
@@ -91,7 +81,7 @@ export function Canvas() {
   const hoveredPortRef = useRef<{ nodeId: string; portId: string; portType: "input" | "output" } | null>(null)
 
   const {
-    nodes, edges, zoom, panX, panY,
+    edges, zoom, panX, panY,
     selectNode, moveNode, addEdge, setViewport,
   } = useWorkflowStore()
 
@@ -114,7 +104,6 @@ export function Canvas() {
   // ─── Hit testing ─────────────────────────────────────────────────────────────
   const getPortAt = useCallback((wx: number, wy: number, nodes: WorkflowNode[]) => {
     for (const node of nodes) {
-      const nh = nodeHeight(node)
       // inputs
       for (const port of node.inputs) {
         const pos = getPortPosition(node, port.id, "input")
@@ -331,7 +320,7 @@ export function Canvas() {
       }
 
       // ── Input ports ──
-      node.inputs.forEach((port, idx) => {
+      node.inputs.forEach((port, _idx) => {
         const pos = getPortPosition(node, port.id, "input")
         const isHovered = hoveredPortRef.current?.nodeId === node.id &&
           hoveredPortRef.current?.portId === port.id
@@ -361,7 +350,7 @@ export function Canvas() {
       })
 
       // ── Output ports ──
-      node.outputs.forEach((port, idx) => {
+      node.outputs.forEach((port, _idx) => {
         const pos = getPortPosition(node, port.id, "output")
         const isHovered = hoveredPortRef.current?.nodeId === node.id &&
           hoveredPortRef.current?.portId === port.id
@@ -401,7 +390,7 @@ export function Canvas() {
     lastTimeRef.current = time
 
     // Advance dot offsets
-    dotOffsets.current.forEach((offsets, edgeId) => {
+    dotOffsets.current.forEach((offsets, _edgeId) => {
       for (let i = 0; i < offsets.length; i++) {
         offsets[i] = (offsets[i] + DOT_ANIM_SPEED * dt) % 1
       }

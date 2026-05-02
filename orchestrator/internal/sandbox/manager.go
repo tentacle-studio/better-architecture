@@ -13,11 +13,13 @@ import (
 )
 
 type Manager struct {
-	k8sClient     *k8s.Client
-	sandboxes     map[string]*Sandbox
-	mu            sync.RWMutex
-	ttl           time.Duration
-	testerPodCIDR string
+	k8sClient            *k8s.Client
+	sandboxes            map[string]*Sandbox
+	mu                   sync.RWMutex
+	ttl                  time.Duration
+	testerPodCIDR        string
+	vclusterChartRepo    string
+	vclusterChartVersion string
 }
 
 type Sandbox struct {
@@ -33,12 +35,14 @@ type Sandbox struct {
 	ExpiresAt        time.Time
 }
 
-func NewManager(k8sClient *k8s.Client, ttl time.Duration, testerPodCIDR string) *Manager {
+func NewManager(k8sClient *k8s.Client, ttl time.Duration, testerPodCIDR, chartRepo, chartVersion string) *Manager {
 	return &Manager{
-		k8sClient:     k8sClient,
-		sandboxes:     make(map[string]*Sandbox),
-		ttl:           ttl,
-		testerPodCIDR: testerPodCIDR,
+		k8sClient:            k8sClient,
+		sandboxes:            make(map[string]*Sandbox),
+		ttl:                  ttl,
+		testerPodCIDR:        testerPodCIDR,
+		vclusterChartRepo:    chartRepo,
+		vclusterChartVersion: chartVersion,
 	}
 }
 
@@ -65,6 +69,8 @@ func (m *Manager) CreateSandbox(ctx context.Context, userID, quizID, seedManifes
 	config := vcluster.VClusterConfig{
 		Name:              vclusterName,
 		Namespace:         namespace,
+		ChartRepo:         m.vclusterChartRepo,
+		ChartVersion:      m.vclusterChartVersion,
 		NetworkPolicyCIDR: m.testerPodCIDR,
 	}
 
@@ -133,12 +139,24 @@ func (m *Manager) GetSandbox(sandboxID string) (*Sandbox, error) {
 	return sandbox, nil
 }
 
+func (m *Manager) GetK8sClient() *k8s.Client {
+	return m.k8sClient
+}
+
 func (m *Manager) applySeedData(ctx context.Context, namespace, seedManifest string) error {
 	manifestBytes, err := base64.StdEncoding.DecodeString(seedManifest)
 	if err != nil {
 		return fmt.Errorf("failed to decode seed manifest: %w", err)
 	}
 
-	_ = manifestBytes
-	return fmt.Errorf("not implemented: apply K8s manifest to vcluster")
+	seeder, err := NewSeeder(m.k8sClient.GetConfig())
+	if err != nil {
+		return fmt.Errorf("failed to create seeder: %w", err)
+	}
+
+	if err := seeder.ApplyManifest(ctx, namespace, string(manifestBytes)); err != nil {
+		return fmt.Errorf("failed to apply manifest: %w", err)
+	}
+
+	return nil
 }

@@ -1,6 +1,7 @@
-.PHONY: all proto build run clean docker-build helm-install test
+.PHONY: all proto build run clean docker-build helm-install helm-upgrade helm-uninstall test deps install-tools temporal-up temporal-down worker help
 
 BINARY_NAME=orchestrator
+WORKER_BINARY=temporal-worker
 DOCKER_IMAGE=orchestrator:latest
 HELM_CHART=deploy/helm/orchestrator
 
@@ -18,6 +19,9 @@ build:
 
 run: build
 	@echo "Running $(BINARY_NAME)..."
+	@if [ -z "$$KUBECONFIG" ]; then \
+		export KUBECONFIG=$$HOME/.kube/config; \
+	fi; \
 	./bin/$(BINARY_NAME)
 
 clean:
@@ -58,6 +62,24 @@ install-tools:
 	go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
 	go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
 
+temporal-up:
+	@echo "Starting Temporal server..."
+	docker-compose -f docker-compose.temporal.yml up -d
+	@echo "Temporal UI available at http://localhost:8080"
+
+temporal-down:
+	@echo "Stopping Temporal server..."
+	docker-compose -f docker-compose.temporal.yml down
+
+worker:
+	@echo "Building Temporal worker..."
+	go build -o bin/$(WORKER_BINARY) ./cmd/worker
+	@echo "Running Temporal worker..."
+	@if [ -z "$$KUBECONFIG" ]; then \
+		export KUBECONFIG=$$HOME/.kube/config; \
+	fi; \
+	./bin/$(WORKER_BINARY)
+
 help:
 	@echo "Available targets:"
 	@echo "  all            - Generate proto and build"
@@ -72,3 +94,6 @@ help:
 	@echo "  test           - Run tests"
 	@echo "  deps           - Download and tidy dependencies"
 	@echo "  install-tools  - Install protoc plugins"
+	@echo "  temporal-up    - Start Temporal server with Docker Compose"
+	@echo "  temporal-down  - Stop Temporal server"
+	@echo "  worker         - Build and run Temporal worker"

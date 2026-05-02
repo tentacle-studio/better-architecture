@@ -7,6 +7,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -119,4 +120,8 @@ func (c *Client) getServiceAccountToken(ctx context.Context, namespace, saName s
 
 func (c *Client) GetDynamicClient() (dynamic.Interface, error) {
 	return dynamic.NewForConfig(c.Config)
+}
+
+func (c *Client) GetConfig() *rest.Config {
+	return c.Config
 }

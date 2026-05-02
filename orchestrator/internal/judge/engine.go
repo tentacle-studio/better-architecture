@@ -9,7 +9,24 @@ import (
 )
 
 type Engine struct {
-	k8sClient *k8s.Client
+	k8sClient        *k8s.Client
+	prometheusURL    string
+	passingThreshold float64
+	baseXP           int32
+}
+
+type EngineOption func(*Engine)
+
+func WithPrometheusURL(url string) EngineOption {
+	return func(e *Engine) { e.prometheusURL = url }
+}
+
+func WithPassingThreshold(threshold float64) EngineOption {
+	return func(e *Engine) { e.passingThreshold = threshold }
+}
+
+func WithBaseXP(xp int32) EngineOption {
+	return func(e *Engine) { e.baseXP = xp }
 }
 
 type CheckType string
@@ -33,15 +50,23 @@ type CheckResult struct {
 }
 
 type ValidationResult struct {
-	Passed  bool
-	Results []CheckResult
-	Score   int32
+	Passed    bool
+	Results   []CheckResult
+	Score     int32
+	MaxScore  int32
+	XPAwarded int32
 }
 
-func NewEngine(k8sClient *k8s.Client) *Engine {
-	return &Engine{
-		k8sClient: k8sClient,
+func NewEngine(k8sClient *k8s.Client, opts ...EngineOption) *Engine {
+	e := &Engine{
+		k8sClient:        k8sClient,
+		passingThreshold: 0.8,
+		baseXP:           100,
 	}
+	for _, opt := range opts {
+		opt(e)
+	}
+	return e
 }
 
 func (e *Engine) Validate(ctx context.Context, sandboxID, quizID string, checks []Check) (*ValidationResult, error) {
@@ -71,11 +96,29 @@ func (e *Engine) Validate(ctx context.Context, sandboxID, quizID string, checks 
 		}
 
 		result.Results = append(result.Results, checkResult)
+		result.MaxScore += checkResult.Points
 		if checkResult.Passed {
 			result.Score += checkResult.Points
-		} else {
-			result.Passed = false
 		}
+	}
+
+	threshold := e.passingThreshold
+	if threshold == 0 {
+		threshold = 0.8
+	}
+	baseXP := e.baseXP
+	if baseXP == 0 {
+		baseXP = 100
+	}
+
+	if result.MaxScore > 0 {
+		ratio := float64(result.Score) / float64(result.MaxScore)
+		result.Passed = ratio >= threshold
+		if result.Passed {
+			result.XPAwarded = int32(float64(baseXP) * ratio)
+		}
+	} else {
+		result.Passed = len(checks) == 0
 	}
 
 	return result, nil
@@ -107,6 +150,6 @@ func (e *Engine) runSLACheck(ctx context.Context, sandboxID, specJSON string) (C
 		return CheckResult{}, fmt.Errorf("failed to unmarshal SLA check spec: %w", err)
 	}
 
-	checker := NewSLAChecker(e.k8sClient)
+	checker := NewSLAChecker(e.k8sClient, e.prometheusURL)
 	return checker.Check(ctx, sandboxID, spec)
 }

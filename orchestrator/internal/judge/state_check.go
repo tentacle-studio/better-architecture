@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/tentacle-studio/better-architecture/orchestrator/internal/k8s"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
@@ -33,48 +34,106 @@ func (c *StateChecker) Check(ctx context.Context, sandboxID string, spec StateCh
 	result := CheckResult{
 		CheckName: spec.Name,
 		Points:    spec.Points,
-		Passed:    false,
 	}
 
-	actualState, err := c.getResourceState(ctx, spec)
+	resource, err := c.fetchResource(ctx, spec)
 	if err != nil {
-		result.Message = fmt.Sprintf("Failed to get resource state: %v", err)
+		result.Message = fmt.Sprintf("failed to get resource: %v", err)
 		return result, nil
 	}
 
-	if c.matchesExpectedState(actualState, spec.ExpectedState) {
-		result.Passed = true
-		result.Message = "Resource state matches expected state"
-	} else {
-		result.Message = fmt.Sprintf("Resource state does not match. Expected: %v, Got: %v", spec.ExpectedState, actualState)
+	passed, msg, err := checkConditions(resource.Object, spec.ExpectedState)
+	if err != nil {
+		result.Message = fmt.Sprintf("error evaluating conditions: %v", err)
+		return result, nil
 	}
-
+	result.Passed = passed
+	result.Message = msg
 	return result, nil
 }
 
-func (c *StateChecker) getResourceState(ctx context.Context, spec StateCheckSpec) (map[string]string, error) {
+func (c *StateChecker) fetchResource(ctx context.Context, spec StateCheckSpec) (*unstructured.Unstructured, error) {
+	if c.k8sClient == nil {
+		return nil, fmt.Errorf("k8s client not configured")
+	}
 	gvr, err := c.getGVR(spec.ResourceType)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get GVR for resource type %s: %w", spec.ResourceType, err)
+		return nil, fmt.Errorf("get GVR for %s: %w", spec.ResourceType, err)
 	}
-
 	dynamicClient, err := c.k8sClient.GetDynamicClient()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get dynamic client: %w", err)
+		return nil, fmt.Errorf("get dynamic client: %w", err)
 	}
-
-	var resource *unstructured.Unstructured
 	if spec.Namespace != "" {
-		resource, err = dynamicClient.Resource(gvr).Namespace(spec.Namespace).Get(ctx, spec.ResourceName, metav1.GetOptions{})
-	} else {
-		resource, err = dynamicClient.Resource(gvr).Get(ctx, spec.ResourceName, metav1.GetOptions{})
+		return dynamicClient.Resource(gvr).Namespace(spec.Namespace).Get(ctx, spec.ResourceName, metav1.GetOptions{})
 	}
+	return dynamicClient.Resource(gvr).Get(ctx, spec.ResourceName, metav1.GetOptions{})
+}
 
-	if err != nil {
-		return nil, fmt.Errorf("failed to get resource %s/%s: %w", spec.ResourceType, spec.ResourceName, err)
+type pathSegment struct {
+	key   string
+	index int
+}
+
+func parsePathSegments(path string) []pathSegment {
+	parts := strings.Split(path, ".")
+	segments := make([]pathSegment, 0, len(parts))
+	for _, part := range parts {
+		seg := pathSegment{index: -1}
+		if bracketIdx := strings.Index(part, "["); bracketIdx != -1 {
+			seg.key = part[:bracketIdx]
+			indexStr := part[bracketIdx+1 : len(part)-1]
+			fmt.Sscanf(indexStr, "%d", &seg.index)
+		} else {
+			seg.key = part
+		}
+		segments = append(segments, seg)
 	}
+	return segments
+}
 
-	return c.extractState(resource, spec.ResourceType)
+func evalPath(obj map[string]interface{}, path string) (string, bool, error) {
+	segments := parsePathSegments(path)
+	var current interface{} = obj
+	for _, seg := range segments {
+		m, ok := current.(map[string]interface{})
+		if !ok {
+			return "", false, fmt.Errorf("expected object at %q, got %T", seg.key, current)
+		}
+		val, exists := m[seg.key]
+		if !exists {
+			return "", false, nil
+		}
+		if seg.index >= 0 {
+			arr, ok := val.([]interface{})
+			if !ok {
+				return "", false, fmt.Errorf("path segment %q is not an array, got %T", seg.key, val)
+			}
+			if seg.index >= len(arr) {
+				return "", false, nil
+			}
+			current = arr[seg.index]
+		} else {
+			current = val
+		}
+	}
+	return fmt.Sprintf("%v", current), true, nil
+}
+
+func checkConditions(obj map[string]interface{}, conditions map[string]string) (bool, string, error) {
+	for path, expected := range conditions {
+		actual, found, err := evalPath(obj, path)
+		if err != nil {
+			return false, fmt.Sprintf("error evaluating %q: %v", path, err), err
+		}
+		if !found {
+			return false, fmt.Sprintf("path %q not found in resource", path), nil
+		}
+		if actual != expected {
+			return false, fmt.Sprintf("condition %q: expected %q, got %q", path, expected, actual), nil
+		}
+	}
+	return true, "all conditions met", nil
 }
 
 func (c *StateChecker) getGVR(resourceType string) (schema.GroupVersionResource, error) {
@@ -124,57 +183,6 @@ func (c *StateChecker) getGVR(resourceType string) (schema.GroupVersionResource,
 	}
 
 	return gvr, nil
-}
-
-func (c *StateChecker) extractState(resource *unstructured.Unstructured, resourceType string) (map[string]string, error) {
-	state := make(map[string]string)
-	resourceType = strings.ToLower(resourceType)
-
-	switch resourceType {
-	case "pod":
-		if phase, found, _ := unstructured.NestedString(resource.Object, "status", "phase"); found {
-			state["phase"] = phase
-		}
-		if ready, found, _ := unstructured.NestedString(resource.Object, "status", "conditions"); found {
-			state["ready"] = ready
-		}
-
-	case "deployment":
-		if replicas, found, _ := unstructured.NestedInt64(resource.Object, "status", "replicas"); found {
-			state["replicas"] = fmt.Sprintf("%d", replicas)
-		}
-		if readyReplicas, found, _ := unstructured.NestedInt64(resource.Object, "status", "readyReplicas"); found {
-			state["readyReplicas"] = fmt.Sprintf("%d", readyReplicas)
-		}
-		if availableReplicas, found, _ := unstructured.NestedInt64(resource.Object, "status", "availableReplicas"); found {
-			state["availableReplicas"] = fmt.Sprintf("%d", availableReplicas)
-		}
-
-	case "service":
-		if clusterIP, found, _ := unstructured.NestedString(resource.Object, "spec", "clusterIP"); found {
-			state["clusterIP"] = clusterIP
-		}
-		if serviceType, found, _ := unstructured.NestedString(resource.Object, "spec", "type"); found {
-			state["type"] = serviceType
-		}
-
-	case "statefulset":
-		if replicas, found, _ := unstructured.NestedInt64(resource.Object, "status", "replicas"); found {
-			state["replicas"] = fmt.Sprintf("%d", replicas)
-		}
-		if readyReplicas, found, _ := unstructured.NestedInt64(resource.Object, "status", "readyReplicas"); found {
-			state["readyReplicas"] = fmt.Sprintf("%d", readyReplicas)
-		}
-	}
-
-	metadata := resource.Object["metadata"].(map[string]interface{})
-	if labels, ok := metadata["labels"].(map[string]interface{}); ok {
-		for k, v := range labels {
-			state[fmt.Sprintf("label.%s", k)] = fmt.Sprintf("%v", v)
-		}
-	}
-
-	return state, nil
 }
 
 func (c *StateChecker) matchesExpectedState(actual, expected map[string]string) bool {

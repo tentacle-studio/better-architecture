@@ -12,12 +12,13 @@ interface BottomPanelProps {
   height: number
   onHeightChange: (h: number) => void
   onClose: () => void
+  sandboxId?: string
 }
 
 const MIN_HEIGHT = 120
 const MAX_HEIGHT = 600
 
-export function BottomPanel({ height, onHeightChange, onClose }: BottomPanelProps) {
+export function BottomPanel({ height, onHeightChange, onClose, sandboxId }: BottomPanelProps) {
   const [activeTab, setActiveTab] = useState<Tab>("terminal")
   const [isMaximized, setIsMaximized] = useState(false)
   const isDragging = useRef(false)
@@ -141,7 +142,7 @@ export function BottomPanel({ height, onHeightChange, onClose }: BottomPanelProp
       {/* Pane content */}
       <div className="min-h-0 flex-1">
         <div className={cn("h-full", activeTab === "terminal" ? "block" : "hidden")}>
-          <TerminalPane isActive={activeTab === "terminal"} />
+          <TerminalPane sandboxId={sandboxId} isActive={activeTab === "terminal"} />
         </div>
         <div className={cn("h-full", activeTab === "editor" ? "block" : "hidden")}>
           <EditorPane isActive={activeTab === "editor"} />

@@ -1,0 +1,6 @@
+apiVersion: v2
+name: gateway
+description: Fastify API Gateway for Better Architecture
+type: application
+version: 0.1.0
+appVersion: "1.0.0"

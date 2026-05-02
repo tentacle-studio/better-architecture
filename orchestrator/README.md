@@ -9,20 +9,26 @@ The orchestrator service is responsible for:
 - **Terminal Exec Streaming**: Bidirectional streaming for terminal access to pods via SPDY
 - **Quiz Validation**: Run automated checks (state, liveness, SLA) against sandbox environments
 - **Resource Watching**: Real-time streaming of Kubernetes resource events
+- **Seed Data Application**: Apply Kubernetes manifests to sandbox environments
+- **Event Publishing**: Publish sandbox lifecycle events to NATS
+- **Observability**: Distributed tracing and metrics via OpenTelemetry
 
 ## Architecture
 
 ```
 orchestrator/
-├── cmd/orchestrator/          # Main entrypoint
+├── cmd/orchestrator/          # Main entrypoint with graceful shutdown
 ├── internal/
 │   ├── config/               # Environment-based configuration
 │   ├── k8s/                  # Kubernetes client wrappers
 │   ├── vcluster/             # vCluster provisioning & health checks
-│   ├── sandbox/              # High-level sandbox management
+│   ├── sandbox/              # High-level sandbox management & seeding
 │   ├── judge/                # Validation engine (state, liveness, SLA)
-│   └── grpc/                 # gRPC server implementation
-└── deploy/                   # Dockerfile & Helm charts
+│   ├── grpc/                 # gRPC server with streaming support
+│   ├── events/               # NATS event publishing
+│   └── telemetry/            # OpenTelemetry tracing & metrics
+├── deploy/                   # Dockerfile & Helm charts
+└── test/integration/         # Integration test suite
 ```
 
 ## Prerequisites

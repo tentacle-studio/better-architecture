@@ -30,4 +30,4 @@ go.work
 Thumbs.db
 
 # Build artifacts
-orchestrator
+/orchestrator

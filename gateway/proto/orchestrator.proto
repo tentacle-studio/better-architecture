@@ -1,0 +1,79 @@
+syntax = "proto3";
+
+package orchestrator;
+
+service OrchestratorService {
+  rpc CreateSandbox(CreateSandboxRequest) returns (CreateSandboxResponse);
+  rpc DestroySandbox(DestroySandboxRequest) returns (DestroySandboxResponse);
+  rpc ValidateQuiz(ValidateQuizRequest) returns (ValidateQuizResponse);
+  rpc ExecStream(stream ExecRequest) returns (stream ExecResponse);
+  rpc WatchResources(WatchResourcesRequest) returns (stream ResourceEvent);
+}
+
+message CreateSandboxRequest {
+  string userId = 1;
+  string labId = 2;
+  string templateId = 3;
+}
+
+message CreateSandboxResponse {
+  string sandboxId = 1;
+  string namespace = 2;
+  string status = 3;
+}
+
+message DestroySandboxRequest {
+  string sandboxId = 1;
+}
+
+message DestroySandboxResponse {
+  bool success = 1;
+}
+
+message ValidateQuizRequest {
+  string sandboxId = 1;
+  string labId = 2;
+  map<string, string> answers = 3;
+}
+
+message ValidateQuizResponse {
+  bool passed = 1;
+  double score = 2;
+  repeated QuizResult results = 3;
+}
+
+message QuizResult {
+  string questionId = 1;
+  bool correct = 2;
+  string feedback = 3;
+}
+
+message ExecRequest {
+  string sandboxId = 1;
+  string type = 2;
+  bytes data = 3;
+  int32 cols = 4;
+  int32 rows = 5;
+}
+
+message ExecResponse {
+  string type = 1;
+  bytes data = 2;
+}
+
+message WatchResourcesRequest {
+  string sandboxId = 1;
+}
+
+message ResourceEvent {
+  string kind = 1;
+  string name = 2;
+  string status = 3;
+  repeated Connection connections = 4;
+}
+
+message Connection {
+  string from = 1;
+  string to = 2;
+  int32 port = 3;
+}

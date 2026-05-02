@@ -1,6 +1,8 @@
 #!/bin/bash
 set -e
 
+cd "$(dirname "$0")"
+
 echo "🚀 Setting up Go Orchestrator..."
 
 # Check if Go is installed
@@ -23,19 +25,22 @@ echo "✅ protoc version: $(protoc --version)"
 
 # Install protoc plugins
 echo "📦 Installing protoc plugins..."
-go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
-go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.31.0
+go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.3.0
+
+# Ensure GOPATH/bin is in PATH so protoc can find the installed plugins
+export PATH="$(go env GOPATH)/bin:$PATH"
+
+# Generate protobuf code first so the local package exists before go mod download
+echo "🔨 Generating protobuf code..."
+protoc --go_out=. --go_opt=paths=source_relative \
+    --go-grpc_out=. --go-grpc_opt=paths=source_relative \
+    internal/grpc/proto/orchestrator.proto
 
 # Download dependencies
 echo "📦 Downloading Go dependencies..."
 go mod download
 go mod tidy
-
-# Generate protobuf code
-echo "🔨 Generating protobuf code..."
-protoc --go_out=. --go_opt=paths=source_relative \
-    --go-grpc_out=. --go-grpc_opt=paths=source_relative \
-    internal/grpc/proto/orchestrator.proto
 
 # Build the binary
 echo "🔨 Building orchestrator..."

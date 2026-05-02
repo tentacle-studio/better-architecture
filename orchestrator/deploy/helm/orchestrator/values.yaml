@@ -1,0 +1,38 @@
+replicaCount: 1
+
+image:
+  repository: orchestrator
+  pullPolicy: IfNotPresent
+  tag: "latest"
+
+service:
+  type: ClusterIP
+  port: 50051
+
+resources:
+  limits:
+    cpu: 1000m
+    memory: 1Gi
+  requests:
+    cpu: 500m
+    memory: 512Mi
+
+env:
+  GRPC_PORT: "50051"
+  VCLUSTER_NAMESPACE: "vcluster-system"
+  VCLUSTER_CHART_REPO: "https://charts.loft.sh"
+  VCLUSTER_CHART_VERSION: "0.19.0"
+  SANDBOX_TTL: "2h"
+  MAX_SANDBOXES_PER_USER: "5"
+  NATS_URL: "nats://nats:4222"
+  OTEL_ENDPOINT: "otel-collector:4317"
+  TESTER_POD_CIDR: "10.244.0.0/16"
+  HEALTH_CHECK_INTERVAL: "2s"
+  HEALTH_CHECK_TIMEOUT: "90s"
+
+serviceAccount:
+  create: true
+  name: orchestrator
+
+rbac:
+  create: true

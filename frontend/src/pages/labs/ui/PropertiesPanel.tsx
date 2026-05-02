@@ -16,7 +16,6 @@ import {
   ChevronUp,
   ChevronDown,
   Layers,
-  ChevronLeft,
   ChevronRight,
   X,
 } from "lucide-react"

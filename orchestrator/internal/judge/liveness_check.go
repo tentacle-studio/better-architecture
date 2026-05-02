@@ -7,7 +7,9 @@ import (
 	"time"
 
 	"github.com/tentacle-studio/better-architecture/orchestrator/internal/k8s"
-	"k8s.io/apiextensions-apiserver/examples/client-go/pkg/client/clientset/versioned/scheme"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/remotecommand"
 )
 
@@ -21,6 +23,8 @@ type LivenessCheckSpec struct {
 	TargetPort    int32  `json:"target_port"`
 	Namespace     string `json:"namespace"`
 	Protocol      string `json:"protocol"`
+	Path          string `json:"path"`
+	TimeoutMs     int32  `json:"timeout_ms"`
 	ExpectedCode  int32  `json:"expected_code"`
 	Points        int32  `json:"points"`
 }
@@ -55,6 +59,9 @@ func (c *LivenessChecker) Check(ctx context.Context, sandboxID string, spec Live
 }
 
 func (c *LivenessChecker) testConnectivity(ctx context.Context, spec LivenessCheckSpec) (bool, error) {
+	if c.k8sClient == nil {
+		return false, fmt.Errorf("k8s client not configured")
+	}
 	testerPodName := fmt.Sprintf("liveness-tester-%d", time.Now().Unix())
 	namespace := spec.Namespace
 	if namespace == "" {
@@ -101,7 +108,14 @@ func (c *LivenessChecker) testConnectivity(ctx context.Context, spec LivenessChe
 	}
 
 	targetURL := c.buildTargetURL(spec)
-	curlCmd := []string{"curl", "-s", "-o", "/dev/null", "-w", "%{http_code}", "--max-time", "5", targetURL}
+	timeoutSec := int32(5)
+	if spec.TimeoutMs > 0 {
+		timeoutSec = spec.TimeoutMs / 1000
+		if timeoutSec == 0 {
+			timeoutSec = 1
+		}
+	}
+	curlCmd := []string{"curl", "-s", "-o", "/dev/null", "-w", "%{http_code}", "--max-time", fmt.Sprintf("%d", timeoutSec), targetURL}
 
 	stdout, stderr, err := c.execInPod(ctx, namespace, testerPodName, "tester", curlCmd)
 	if err != nil {
@@ -121,6 +135,9 @@ func (c *LivenessChecker) buildTargetURL(spec LivenessCheckSpec) string {
 	protocol := spec.Protocol
 	if protocol == "" {
 		protocol = "http"
+	}
+	if spec.Path != "" {
+		return fmt.Sprintf("%s://%s:%d%s", protocol, spec.TargetService, spec.TargetPort, spec.Path)
 	}
 	return fmt.Sprintf("%s://%s:%d", protocol, spec.TargetService, spec.TargetPort)
 }

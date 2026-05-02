@@ -1,57 +1,65 @@
 import { useState, useRef, useCallback, useEffect } from "react"
 import {
-  Settings2,
-  Home,
-  BookOpen,
-  HelpCircle,
-  ChevronLeft,
   ChevronRight,
-  FolderOpen,
-  Variable,
-  User,
-  MoreHorizontal,
-  Layers,
-  Square,
-  Circle,
-  Type,
-  Minus,
-  ArrowRight,
-  Image,
-  Eye,
-  EyeOff,
-  Lock,
-  Unlock,
-  Trash2,
-  Copy,
-  ChevronUp,
-  ChevronDown,
   FileText,
   Lightbulb,
   History,
   Tag,
   Building2,
+  Lock,
+  Clock,
+  Loader2,
 } from "lucide-react"
-import { Input } from "@/shared/ui/input"
-import { Label } from "@/shared/ui/label"
-import { Slider } from "@/shared/ui/slider"
 import { Button } from "@/shared/ui/button"
 import { ScrollArea } from "@/shared/ui/scroll-area"
 import { Badge } from "@/shared/ui/badge"
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/shared/ui/tooltip"
-import { useWorkflowStore } from "../model/workflow"
+import { TooltipProvider } from "@/shared/ui/tooltip"
 import { cn } from "@shared/lib/utils"
+import { getLab, getLabSolutions } from "@entities/lab"
+import type { Lab } from "@entities/lab"
+import { SubmissionCard } from "@entities/submission"
+import type { Submission } from "@entities/submission"
+import { httpClient } from "@shared/api"
 
-export function LeftSidebar() {
+const DIFFICULTY_STYLES: Record<string, string> = {
+  Easy:   "bg-emerald-50 text-emerald-700",
+  Medium: "bg-amber-50 text-amber-700",
+  Hard:   "bg-red-50 text-red-700",
+}
+
+export function LeftSidebar({ labId }: { labId?: string }) {
   const [isCollapsed, setIsCollapsed] = useState(false)
   const [width, setWidth] = useState(400)
   const [isResizing, setIsResizing] = useState(false)
   const [activeTab, setActiveTab] = useState<"description" | "solutions" | "submissions">("description")
   const sidebarRef = useRef<HTMLDivElement>(null)
+
+  const [lab, setLab] = useState<Lab | null>(null)
+  const [solutions, setSolutions] = useState<string[]>([])
+  const [submissions, setSubmissions] = useState<Submission[]>([])
+  const [solutionsLocked, setSolutionsLocked] = useState(true)
+  const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    if (!labId) return
+    setLoading(true)
+    Promise.all([
+      getLab(labId),
+      httpClient.get<Submission[]>(`/submissions?labId=${labId}`),
+    ]).then(([labData, subsRes]) => {
+      setLab(labData)
+      if (!subsRes.error) {
+        setSubmissions(subsRes.data)
+        setSolutionsLocked(subsRes.data.length === 0)
+      }
+      setLoading(false)
+    })
+  }, [labId])
+
+  useEffect(() => {
+    if (activeTab !== "solutions" || solutionsLocked || !labId || solutions.length > 0) return
+    getLabSolutions(labId).then(setSolutions)
+  }, [activeTab, labId, solutions.length, solutionsLocked])
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
@@ -61,9 +69,7 @@ export function LeftSidebar() {
   const handleMouseMove = useCallback((e: MouseEvent) => {
     if (!isResizing) return
     const newWidth = e.clientX
-    if (newWidth >= 200 && newWidth <= 600) {
-      setWidth(newWidth)
-    }
+    if (newWidth >= 200 && newWidth <= 600) setWidth(newWidth)
   }, [isResizing])
 
   const handleMouseUp = useCallback(() => {
@@ -80,7 +86,6 @@ export function LeftSidebar() {
       document.body.style.cursor = ""
       document.body.style.userSelect = ""
     }
-
     return () => {
       document.removeEventListener("mousemove", handleMouseMove)
       document.removeEventListener("mouseup", handleMouseUp)
@@ -96,26 +101,11 @@ export function LeftSidebar() {
               variant="ghost"
               size="icon"
               className="h-9 w-9"
-              onClick={() => {
-                setIsCollapsed(false)
-                setActiveTab("description")
-              }}
+              onClick={() => { setIsCollapsed(false); setActiveTab("description") }}
             >
               <FileText className="h-4 w-4 text-gray-600" />
             </Button>
           </div>
-
-          <div className="flex flex-1 flex-col items-center gap-1 py-3">
-            <Button
-              variant="ghost"
-              size="icon"
-              className={cn("h-9 w-9", activeTab === "description" && "bg-gray-100")}
-              onClick={() => setIsCollapsed(false)}
-            >
-              <FileText className="h-4 w-4 text-primary" />
-            </Button>
-          </div>
-
           <Button
             variant="ghost"
             size="icon"
@@ -129,6 +119,92 @@ export function LeftSidebar() {
     )
   }
 
+  const descriptionContent = () => {
+    if (loading) {
+      return (
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="h-5 w-5 animate-spin text-gray-400" />
+        </div>
+      )
+    }
+    if (!lab) {
+      return <p className="text-sm text-gray-400">No lab selected.</p>
+    }
+    return (
+      <>
+        <h1 className="text-2xl font-bold mb-3 text-gray-900 tracking-tight">{lab.title}</h1>
+        <div className="flex flex-wrap gap-2 mb-8">
+          <Badge
+            variant="secondary"
+            className={cn("border-none font-bold px-2.5 py-0.5", DIFFICULTY_STYLES[lab.difficulty])}
+          >
+            {lab.difficulty}
+          </Badge>
+          <div className="flex items-center gap-1.5 px-2.5 py-0.5 bg-gray-100 text-gray-600 rounded-full text-[11px] font-semibold">
+            <Clock className="h-3 w-3" />
+            {lab.estimatedMinutes} min
+          </div>
+          {lab.tags.map((tag) => (
+            <div key={tag} className="flex items-center gap-1.5 px-2.5 py-0.5 bg-gray-100 text-gray-600 rounded-full text-[11px] font-semibold">
+              <Tag className="h-3 w-3" />
+              {tag}
+            </div>
+          ))}
+          {lab.companies.map((co) => (
+            <div key={co} className="flex items-center gap-1.5 px-2.5 py-0.5 bg-gray-100 text-gray-600 rounded-full text-[11px] font-semibold">
+              <Building2 className="h-3 w-3" />
+              {co}
+            </div>
+          ))}
+        </div>
+        {/* react-markdown can replace this whitespace renderer once installed */}
+        <div className="prose prose-sm max-w-none text-gray-600 leading-relaxed whitespace-pre-wrap mb-10">
+          {lab.description}
+        </div>
+      </>
+    )
+  }
+
+  const solutionsContent = () => {
+    if (solutionsLocked) {
+      return (
+        <div className="flex flex-col items-center gap-3 py-12 text-center">
+          <Lock className="h-8 w-8 text-gray-300" />
+          <p className="text-sm text-gray-400">Complete a submission to unlock solutions.</p>
+        </div>
+      )
+    }
+    if (solutions.length === 0) {
+      return (
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="h-5 w-5 animate-spin text-gray-400" />
+        </div>
+      )
+    }
+    return (
+      <div className="space-y-4">
+        {solutions.map((sol, i) => (
+          <div key={i} className="rounded-lg border border-gray-100 bg-gray-50 p-4">
+            <pre className="text-xs text-gray-700 font-mono whitespace-pre-wrap">{sol}</pre>
+          </div>
+        ))}
+      </div>
+    )
+  }
+
+  const submissionsContent = () => {
+    if (submissions.length === 0) {
+      return <p className="text-sm text-gray-400">No submissions yet.</p>
+    }
+    return (
+      <div className="space-y-3">
+        {submissions.map((s) => (
+          <SubmissionCard key={s.id} submission={s} />
+        ))}
+      </div>
+    )
+  }
+
   return (
     <TooltipProvider delayDuration={0}>
       <div
@@ -138,109 +214,33 @@ export function LeftSidebar() {
       >
         {/* Tabs */}
         <div className="flex items-center justify-between border-b border-gray-100 bg-gray-50/50 shrink-0">
-          <button
-            onClick={() => setActiveTab("description")}
-            className={cn(
-              "flex-1 flex items-center justify-center gap-2 py-3 border-b-2 text-[11px] font-bold transition-colors uppercase tracking-wider",
-              activeTab === "description"
-                ? "border-primary text-primary bg-white"
-                : "border-transparent text-gray-500 hover:text-gray-900 hover:bg-gray-100/50"
-            )}
-          >
-            <FileText className="h-3.5 w-3.5" />
-            Description
-          </button>
-          <button
-            onClick={() => setActiveTab("solutions")}
-            className={cn(
-              "flex-1 flex items-center justify-center gap-2 py-3 border-b-2 text-[11px] font-bold transition-colors uppercase tracking-wider",
-              activeTab === "solutions"
-                ? "border-primary text-primary bg-white"
-                : "border-transparent text-gray-500 hover:text-gray-900 hover:bg-gray-100/50"
-            )}
-          >
-            <Lightbulb className="h-3.5 w-3.5" />
-            Solutions
-          </button>
-          <button
-            onClick={() => setActiveTab("submissions")}
-            className={cn(
-              "flex-1 flex items-center justify-center gap-2 py-3 border-b-2 text-[11px] font-bold transition-colors uppercase tracking-wider",
-              activeTab === "submissions"
-                ? "border-primary text-primary bg-white"
-                : "border-transparent text-gray-500 hover:text-gray-900 hover:bg-gray-100/50"
-            )}
-          >
-            <History className="h-3.5 w-3.5" />
-            Submissions
-          </button>
+          {(["description", "solutions", "submissions"] as const).map((tab) => {
+            const icons = { description: <FileText className="h-3.5 w-3.5" />, solutions: <Lightbulb className="h-3.5 w-3.5" />, submissions: <History className="h-3.5 w-3.5" /> }
+            const labels = { description: "Description", solutions: "Solutions", submissions: "Submissions" }
+            return (
+              <button
+                key={tab}
+                onClick={() => setActiveTab(tab)}
+                className={cn(
+                  "flex-1 flex items-center justify-center gap-2 py-3 border-b-2 text-[11px] font-bold transition-colors uppercase tracking-wider",
+                  activeTab === tab
+                    ? "border-primary text-primary bg-white"
+                    : "border-transparent text-gray-500 hover:text-gray-900 hover:bg-gray-100/50"
+                )}
+              >
+                {icons[tab]}
+                {labels[tab]}
+              </button>
+            )
+          })}
         </div>
 
         {/* Content */}
         <ScrollArea className="flex-1">
           <div className="p-6">
-            <h1 className="text-2xl font-bold mb-3 text-gray-900 tracking-tight">1. Deploy Nginx Pod</h1>
-
-            <div className="flex gap-2 mb-8">
-              <Badge variant="secondary" className="bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border-none font-bold px-2.5 py-0.5">
-                Easy
-              </Badge>
-              <div className="flex items-center gap-1.5 px-2.5 py-0.5 bg-gray-100 text-gray-600 rounded-full text-[11px] font-semibold">
-                <Tag className="h-3 w-3" />
-                Topics
-              </div>
-              <div className="flex items-center gap-1.5 px-2.5 py-0.5 bg-gray-100 text-gray-600 rounded-full text-[11px] font-semibold">
-                <Building2 className="h-3 w-3" />
-                Companies
-              </div>
-            </div>
-
-            <div className="prose prose-sm max-w-none text-gray-600 space-y-4 mb-10 leading-relaxed">
-              <p>Create and deploy a Kubernetes Pod using the <code className="bg-gray-100 px-1 rounded text-primary font-medium">nginx:latest</code> image.</p>
-              <p>Your task is to construct the appropriate YAML manifest or use imperative commands to instantiate this pod within the cluster.</p>
-              <p>You must ensure that the container exposes port <strong className="text-gray-900 font-bold">80</strong> to accept incoming traffic.</p>
-            </div>
-
-            <div className="mb-8">
-              <h3 className="font-bold mb-3 text-sm text-gray-900 flex items-center gap-2">
-                <div className="w-1.5 h-4 bg-primary/20 rounded-full" />
-                Example 1:
-              </h3>
-              <div className="bg-gray-50 border border-gray-100 rounded-xl p-4 text-[13px] text-gray-600 space-y-3 shadow-sm">
-                <div>
-                  <span className="font-bold text-gray-900 mr-2">Input:</span>
-                  <code className="bg-white border border-gray-200 px-2 py-0.5 rounded font-mono">kubectl apply -f pod.yaml</code>
-                </div>
-                <div>
-                  <span className="font-bold text-gray-900 mr-2">Output:</span>
-                  <code className="font-mono text-emerald-600">pod/nginx-pod created</code>
-                </div>
-                <div className="pt-2 border-t border-gray-200/50">
-                  <span className="font-bold text-gray-900 block mb-1 text-[11px] uppercase tracking-wider text-gray-400">Explanation:</span>
-                  The cluster successfully accepts the configuration and schedules the Nginx container.
-                </div>
-              </div>
-            </div>
-
-            <div className="mb-10">
-              <h3 className="font-bold mb-3 text-sm text-gray-900 flex items-center gap-2">
-                <div className="w-1.5 h-4 bg-primary/20 rounded-full" />
-                Constraints:
-              </h3>
-              <ul className="space-y-3">
-                {[
-                  "The pod name must be exactly nginx-pod.",
-                  "The image must be nginx:latest.",
-                  "The container port must be configured as 80.",
-                  "Only one valid pod should be created."
-                ].map((constraint, i) => (
-                  <li key={i} className="flex gap-3 text-sm text-gray-600 items-start">
-                    <div className="w-1.5 h-1.5 rounded-full bg-primary/40 mt-1.5 shrink-0" />
-                    <span>{constraint}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
+            {activeTab === "description"  && descriptionContent()}
+            {activeTab === "solutions"    && solutionsContent()}
+            {activeTab === "submissions"  && submissionsContent()}
           </div>
         </ScrollArea>
 
@@ -249,7 +249,6 @@ export function LeftSidebar() {
           className="absolute right-0 top-0 h-full w-1 cursor-col-resize hover:bg-primary/20 transition-colors z-20"
           onMouseDown={handleMouseDown}
         />
-
       </div>
     </TooltipProvider>
   )

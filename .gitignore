@@ -47,3 +47,4 @@ vcpkg_installed/
 # Environment files
 .env
 
+node_modules/

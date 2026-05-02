@@ -7,8 +7,10 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/rest"
+	sigsyaml "sigs.k8s.io/yaml"
 )
 
 type Seeder struct {
@@ -29,33 +31,63 @@ func NewSeeder(config *rest.Config) (*Seeder, error) {
 }
 
 func (s *Seeder) ApplyManifest(ctx context.Context, namespace, manifest string) error {
-	decoder := k8syaml.NewDecodingSerializer(unstructured.UnstructuredJSONScheme)
-
 	manifests := strings.Split(manifest, "---")
 
-	for _, manifestDoc := range manifests {
+	for i, manifestDoc := range manifests {
 		manifestDoc = strings.TrimSpace(manifestDoc)
 		if manifestDoc == "" {
 			continue
 		}
 
-		obj := &unstructured.Unstructured{}
-		_, gvk, err := decoder.Decode([]byte(manifestDoc), nil, obj)
+		jsonBytes, err := sigsyaml.YAMLToJSON([]byte(manifestDoc))
 		if err != nil {
-			return fmt.Errorf("failed to decode manifest: %w", err)
+			return fmt.Errorf("failed to convert YAML to JSON (document %d): %w", i, err)
+		}
+
+		obj := &unstructured.Unstructured{}
+		if err := obj.UnmarshalJSON(jsonBytes); err != nil {
+			return fmt.Errorf("failed to decode manifest (document %d): %w", i, err)
 		}
 
 		if obj.GetNamespace() == "" {
 			obj.SetNamespace(namespace)
 		}
 
-		gvr := gvk.GroupVersion().WithResource(strings.ToLower(gvk.Kind) + "s")
+		gvk := obj.GroupVersionKind()
+		gvr, err := s.getGVR(gvk)
+		if err != nil {
+			return fmt.Errorf("failed to get resource type for %s (document %d): %w", gvk.Kind, i, err)
+		}
 
 		_, err = s.dynamicClient.Resource(gvr).Namespace(obj.GetNamespace()).Create(ctx, obj, metav1.CreateOptions{})
 		if err != nil {
-			return fmt.Errorf("failed to create resource %s/%s: %w", gvk.Kind, obj.GetName(), err)
+			return fmt.Errorf("failed to create resource %s/%s (document %d): %w", gvk.Kind, obj.GetName(), i, err)
 		}
 	}
 
 	return nil
+}
+
+func (s *Seeder) getGVR(gvk schema.GroupVersionKind) (schema.GroupVersionResource, error) {
+	kind := strings.ToLower(gvk.Kind)
+
+	resourceMap := map[string]string{
+		"deployment":  "deployments",
+		"service":     "services",
+		"pod":         "pods",
+		"configmap":   "configmaps",
+		"secret":      "secrets",
+		"ingress":     "ingresses",
+		"statefulset": "statefulsets",
+		"daemonset":   "daemonsets",
+		"job":         "jobs",
+		"cronjob":     "cronjobs",
+	}
+
+	resource, ok := resourceMap[kind]
+	if !ok {
+		resource = kind + "s"
+	}
+
+	return gvk.GroupVersion().WithResource(resource), nil
 }

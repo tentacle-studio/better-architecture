@@ -1,23 +1,25 @@
-import { useEffect, useRef, useCallback } from "react"
+import { useEffect, useRef, useCallback, useState } from "react"
 import { Terminal } from "@xterm/xterm"
 import { FitAddon } from "@xterm/addon-fit"
 import { WebLinksAddon } from "@xterm/addon-web-links"
-import { Sandbox } from "e2b"
 import "@xterm/xterm/css/xterm.css"
+import { useSandboxTerminal } from "@features/sandbox"
 
-export function TerminalPane({ isActive }: { isActive: boolean }) {
+export function TerminalPane({
+  sandboxId,
+  isActive,
+}: {
+  sandboxId?: string
+  isActive: boolean
+}) {
   const containerRef = useRef<HTMLDivElement>(null)
-  const termRef = useRef<Terminal | null>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
-  const sandboxRef = useRef<any>(null)
-  const terminalRef = useRef<any>(null)
-  const initializedRef = useRef(false)
+  const [term, setTerm] = useState<Terminal | null>(null)
 
-  const initTerminal = useCallback(async () => {
-    if (!containerRef.current || initializedRef.current) return
-    initializedRef.current = true
+  const initTerminal = useCallback(() => {
+    if (!containerRef.current || term) return
 
-    const term = new Terminal({
+    const t = new Terminal({
       cursorBlink: true,
       fontSize: 13,
       fontFamily: '"Geist Mono", "Fira Code", "Cascadia Code", monospace',
@@ -50,77 +52,26 @@ export function TerminalPane({ isActive }: { isActive: boolean }) {
     })
 
     const fitAddon = new FitAddon()
-    const webLinksAddon = new WebLinksAddon()
-
-    term.loadAddon(fitAddon)
-    term.loadAddon(webLinksAddon)
-    term.open(containerRef.current)
-
-    termRef.current = term
+    t.loadAddon(fitAddon)
+    t.loadAddon(new WebLinksAddon())
+    t.open(containerRef.current)
     fitAddonRef.current = fitAddon
-
-    setTimeout(() => {
-      try { fitAddon.fit() } catch { }
-    }, 50)
-
-    term.writeln("\x1b[1;36m  Connecting to E2B Sandbox...\x1b[0m")
-
-    try {
-      const apiKey = import.meta.env.VITE_E2B_KEY
-      if (!apiKey) {
-        throw new Error("E2B API key not found. Please ensure VITE_E2B_KEY is set in your .env file.")
-      }
-
-      const sandbox = await Sandbox.create({
-        apiKey,
-      })
-      sandboxRef.current = sandbox
-
-      const pty = await sandbox.pty.create({
-        cols: term.cols,
-        rows: term.rows,
-        onData: (data: Uint8Array) => term.write(data),
-      })
-      terminalRef.current = pty
-
-      const encoder = new TextEncoder()
-      term.onData((data: string) => {
-        sandbox.pty.sendInput(pty.pid, encoder.encode(data))
-      })
-
-      term.onResize(({ cols, rows }: { cols: number, rows: number }) => {
-        sandbox.pty.resize(pty.pid, { cols, rows })
-      })
-
-      term.writeln("\x1b[1;32m  Connected!\x1b[0m")
-    } catch (error: any) {
-      term.writeln(`\x1b[1;31m  Connection failed: ${error.message}\x1b[0m`)
-      console.error("E2B Connection Error:", error)
-    }
-  }, [])
+    setTimeout(() => { try { fitAddon.fit() } catch { } }, 50)
+    setTerm(t)
+  }, [term])
 
   useEffect(() => {
     initTerminal()
-
-    const handleBeforeUnload = () => {
-      if (sandboxRef.current) {
-        // Use a synchronous-ish attempt or just fire and forget
-        // for beforeunload, we can't await
-        sandboxRef.current.kill()
-      }
-    }
-
-    window.addEventListener("beforeunload", handleBeforeUnload)
-
     return () => {
-      window.removeEventListener("beforeunload", handleBeforeUnload)
-      if (sandboxRef.current) {
-        sandboxRef.current.kill()
-      }
+      setTerm((prev) => {
+        prev?.dispose()
+        return null
+      })
     }
   }, [initTerminal])
 
-  // Fit on resize
+  useSandboxTerminal(sandboxId ?? null, term)
+
   useEffect(() => {
     if (!isActive || !fitAddonRef.current) return
     const timeout = setTimeout(() => {
