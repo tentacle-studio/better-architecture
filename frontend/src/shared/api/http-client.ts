@@ -43,10 +43,8 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<ApiResp
 
   const makeRequest = (tkn: string | null) => {
     const existingHeaders = (init.headers as Record<string, string> | undefined) ?? {}
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-      ...existingHeaders,
-    }
+    const headers: Record<string, string> = { ...existingHeaders }
+    if (init.body != null) headers['Content-Type'] = 'application/json'
     if (tkn) headers['Authorization'] = `Bearer ${tkn}`
     return fetch(`${BASE_URL}${path}`, { ...init, headers })
   }

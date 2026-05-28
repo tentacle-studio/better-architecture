@@ -76,6 +76,9 @@ func (c *Client) ExecWithResize(ctx context.Context, opts ExecOptions, resizeQue
 			TTY:       opts.TTY,
 		}, scheme.ParameterCodec)
 
+	fmt.Printf("[exec] URL: %s, Container: %s, Pod: %s, NS: %s, Insecure: %v\n",
+		req.URL().String(), opts.ContainerName, opts.PodName, opts.Namespace, c.Config.TLSClientConfig.Insecure)
+
 	exec, err := remotecommand.NewSPDYExecutor(c.Config, "POST", req.URL())
 	if err != nil {
 		return fmt.Errorf("failed to create SPDY executor: %w", err)

@@ -1,5 +1,7 @@
 import { useEffect, useRef, useCallback } from "react"
 import { useWorkflowStore, generateEdgeId, type WorkflowNode } from "../model/workflow"
+import { getLab } from "@entities/lab"
+import { parseInfrastructure } from "../model/infrastructure-parser"
 
 // ─── Layout constants ──────────────────────────────────────────────────────────
 const NODE_WIDTH = 200
@@ -62,7 +64,11 @@ function nodeHeight(node: WorkflowNode) {
 }
 
 // ─── Main component ────────────────────────────────────────────────────────────
-export function Canvas() {
+interface CanvasProps {
+  labId?: string
+}
+
+export function Canvas({ labId }: CanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const ctxRef = useRef<CanvasRenderingContext2D | null>(null)
@@ -82,8 +88,33 @@ export function Canvas() {
 
   const {
     edges, zoom, panX, panY,
-    selectNode, moveNode, addEdge, setViewport,
+    selectNode, moveNode, addEdge, setViewport, loadInfrastructure,
   } = useWorkflowStore()
+
+  // Load infrastructure for the lab
+  useEffect(() => {
+    if (!labId) {
+      console.log('[Canvas] No labId provided')
+      return
+    }
+
+    const loadLabInfrastructure = async () => {
+      console.log('[Canvas] Loading infrastructure for labId:', labId)
+      const lab = await getLab(labId)
+      console.log('[Canvas] Lab data received:', lab)
+
+      if (lab?.seedManifest) {
+        console.log('[Canvas] Parsing seed manifest:', lab.seedManifest.substring(0, 100))
+        const { nodes, edges } = parseInfrastructure(lab.seedManifest)
+        console.log('[Canvas] Parsed nodes:', nodes.length, 'edges:', edges.length)
+        loadInfrastructure(nodes, edges)
+      } else {
+        console.log('[Canvas] No seedManifest found in lab data')
+      }
+    }
+
+    void loadLabInfrastructure()
+  }, [labId, loadInfrastructure])
 
   // Init dot offsets for new edges
   useEffect(() => {

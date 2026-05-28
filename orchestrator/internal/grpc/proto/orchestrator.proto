@@ -30,6 +30,7 @@ message CreateSandboxResponse {
   string sandbox_id = 1;
   string vcluster_endpoint = 2;
   string kubeconfig = 3;  // scoped kubeconfig for this sandbox
+  string terminal_pod_ip = 4;  // IP of the ttyd shell pod for WebSocket proxy
 }
 
 message DestroySandboxRequest {
@@ -103,6 +104,12 @@ message ResourceEvent {
   string namespace = 3;
   string status = 4;     // Running, Pending, Failed, etc.
   string json_patch = 5; // delta update
+  string event_type = 6; // Added, Modified, Deleted, Initial
+  // Pod-specific fields
+  int32 ready_containers = 7;
+  int32 total_containers = 8;
+  int32 restart_count = 9;
+  repeated string conditions = 10;
 }
 
 message Empty {}

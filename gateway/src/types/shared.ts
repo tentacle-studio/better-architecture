@@ -91,6 +91,7 @@ export interface SandboxSession {
   wsTerminalUrl: string;
   wsCanvasUrl: string;
   wsTrafficUrl: string;
+  terminalPodIp?: string;
   createdAt: Date;
   expiresAt: Date;
 }

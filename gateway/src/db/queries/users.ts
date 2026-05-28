@@ -47,6 +47,23 @@ export async function upsertUser(
   return result[0];
 }
 
+export async function createUserWithPassword(
+  db: DbClient,
+  data: { email: string; displayName: string; passwordHash: string }
+) {
+  const result = await db.db
+    .insert(users)
+    .values({
+      email: data.email,
+      displayName: data.displayName,
+      passwordHash: data.passwordHash,
+      role: 'student',
+    })
+    .returning();
+  
+  return result[0];
+}
+
 export async function updateUserXp(db: DbClient, userId: string, xpToAdd: number) {
   const result = await db.db
     .update(users)
@@ -65,4 +82,32 @@ export async function updateUserXp(db: DbClient, userId: string, xpToAdd: number
     .returning();
   
   return result[0];
+}
+
+export async function updateUserProfile(
+  db: DbClient,
+  userId: string,
+  patch: {
+    displayName?: string;
+    avatarUrl?: string | null;
+  }
+) {
+  const nextPatch: Partial<typeof users.$inferInsert> = {
+    updatedAt: new Date(),
+  };
+
+  if (patch.displayName !== undefined) {
+    nextPatch.displayName = patch.displayName;
+  }
+  if (patch.avatarUrl !== undefined) {
+    nextPatch.avatarUrl = patch.avatarUrl;
+  }
+
+  const result = await db.db
+    .update(users)
+    .set(nextPatch)
+    .where(eq(users.id, userId))
+    .returning();
+
+  return result[0] || null;
 }

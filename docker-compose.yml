@@ -31,6 +31,8 @@ services:
       - ./vault/init.sh:/init.sh:ro
     entrypoint: ["/bin/sh", "/init.sh"]
     restart: "no"
+    profiles:
+      - init
 
   # ── Data stores ──────────────────────────────────────────────────────────
   postgres:
@@ -103,8 +105,8 @@ services:
         condition: service_healthy
       vault:
         condition: service_healthy
-    profiles:
-      - full
+      nats:
+        condition: service_started
 
   frontend:
     build:
@@ -115,9 +117,98 @@ services:
       - "8081:80"
     depends_on:
       - gateway
-    profiles:
-      - full
+
+  temporal-postgresql:
+    image: postgres:13
+    container_name: temporal-postgresql
+    environment:
+      POSTGRES_PASSWORD: temporal
+      POSTGRES_USER: temporal
+    ports:
+      - "5433:5432"
+    volumes:
+      - temporal-postgres-data:/var/lib/postgresql/data
+
+  temporal:
+    image: temporalio/auto-setup:1.22.4
+    container_name: temporal
+    depends_on:
+      - temporal-postgresql
+    environment:
+      - DB=postgresql
+      - DB_PORT=5432
+      - POSTGRES_USER=temporal
+      - POSTGRES_PWD=temporal
+      - POSTGRES_SEEDS=temporal-postgresql
+    ports:
+      - "7233:7233"
+    healthcheck:
+      test: ["CMD", "sh", "-c", "nc -z temporal 7233 || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 15s
+
+  temporal-ui:
+    image: temporalio/ui:2.21.3
+    container_name: temporal-ui
+    depends_on:
+      - temporal
+    environment:
+      - TEMPORAL_ADDRESS=temporal:7233
+      - TEMPORAL_CORS_ORIGINS=http://localhost:3000
+    ports:
+      - "8080:8080"
+  
+  orchestrator:
+    build:
+      context: ./orchestrator
+      dockerfile: Dockerfile
+    container_name: orchestrator
+    user: root
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      temporal:
+        condition: service_healthy
+      nats:
+        condition: service_started
+    environment:
+      - TEMPORAL_HOST=temporal:7233
+      - TEMPORAL_NAMESPACE=default
+      - TEMPORAL_TASK_QUEUE=lab-provisioning
+      - KUBECONFIG=/root/.kube/config
+      - NATS_URL=nats://nats:4222
+      - GRPC_PORT=50051
+    ports:
+      - "50051:50051"
+    volumes:
+      - /tmp/kubeconfig-worker:/root/.kube/config:ro
+
+  worker:
+    build:
+      context: ./orchestrator
+      dockerfile: deploy/Dockerfile.worker
+    container_name: temporal-worker
+    user: root
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      temporal:
+        condition: service_healthy
+      nats:
+        condition: service_started
+    environment:
+      - TEMPORAL_HOST=temporal:7233
+      - TEMPORAL_NAMESPACE=default
+      - TEMPORAL_TASK_QUEUE=lab-provisioning
+      - KUBECONFIG=/root/.kube/config
+      - NATS_URL=nats://nats:4222
+      - SANDBOX_TTL=2h
+    volumes:
+      - /tmp/kubeconfig-worker:/root/.kube/config:ro
 
 volumes:
   postgres-data:
   redis-data:
+  temporal-postgres-data:

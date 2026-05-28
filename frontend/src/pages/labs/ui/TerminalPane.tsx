@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { Terminal } from "@xterm/xterm"
 import { FitAddon } from "@xterm/addon-fit"
 import { WebLinksAddon } from "@xterm/addon-web-links"
@@ -13,11 +13,13 @@ export function TerminalPane({
   isActive: boolean
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
+  const termRef = useRef<Terminal | null>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
   const [term, setTerm] = useState<Terminal | null>(null)
 
-  const initTerminal = useCallback(() => {
-    if (!containerRef.current || term) return
+  // Initialize terminal once — deferred until pane is first active so dimensions are valid
+  useEffect(() => {
+    if (!isActive || !containerRef.current || termRef.current) return
 
     const t = new Terminal({
       cursorBlink: true,
@@ -56,26 +58,28 @@ export function TerminalPane({
     t.loadAddon(new WebLinksAddon())
     t.open(containerRef.current)
     fitAddonRef.current = fitAddon
-    setTimeout(() => { try { fitAddon.fit() } catch { } }, 50)
+    termRef.current = t
+    setTimeout(() => {
+      try { fitAddon.fit(); t.focus() } catch { }
+    }, 50)
     setTerm(t)
-  }, [term])
 
+  }, [isActive])
+
+  // Dispose terminal only on component unmount
   useEffect(() => {
-    initTerminal()
     return () => {
-      setTerm((prev) => {
-        prev?.dispose()
-        return null
-      })
+      termRef.current?.dispose()
+      termRef.current = null
     }
-  }, [initTerminal])
+  }, [])
 
   useSandboxTerminal(sandboxId ?? null, term)
 
   useEffect(() => {
     if (!isActive || !fitAddonRef.current) return
     const timeout = setTimeout(() => {
-      try { fitAddonRef.current?.fit() } catch { }
+      try { fitAddonRef.current?.fit(); termRef.current?.focus() } catch { }
     }, 100)
     return () => clearTimeout(timeout)
   }, [isActive])
@@ -89,7 +93,11 @@ export function TerminalPane({
   }, [])
 
   return (
-    <div className="h-full w-full overflow-hidden" style={{ background: "#0f1117" }}>
+    <div
+      className="h-full w-full overflow-hidden"
+      style={{ background: "#0f1117" }}
+      onClick={() => termRef.current?.focus()}
+    >
       <div ref={containerRef} className="h-full w-full p-2" />
     </div>
   )

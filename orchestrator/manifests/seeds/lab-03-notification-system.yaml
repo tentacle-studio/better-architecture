@@ -1,0 +1,177 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: lab-config
+  labels:
+    app: workload
+data:
+  LAB_NAME: "notification-system"
+  SEED_LEVEL: "infra-ready"
+  POSTGRES_HOST: "postgres"
+  POSTGRES_PORT: "5432"
+  POSTGRES_DB: "notifications"
+  POSTGRES_USER: "postgres"
+  POSTGRES_PASSWORD: "postgres"
+  REDIS_HOST: "redis"
+  REDIS_PORT: "6379"
+  NATS_URL: "nats://nats:4222"
+  README: |
+    Pre-configured infrastructure for the Notification System lab:
+
+    - PostgreSQL 16 (postgres:5432) — user preferences & notification history
+    - Redis 7 (redis:6379) — deduplication cache & preference lookups
+    - NATS (nats:4222) — lightweight event bus for pub/sub routing
+
+    Connect from the shell pod:
+      psql -h postgres -U postgres -d notifications
+      redis-cli -h redis
+      nats sub '>' -s nats://nats:4222
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  labels:
+    app: workload
+    component: postgres
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      component: postgres
+  template:
+    metadata:
+      labels:
+        app: workload
+        component: postgres
+    spec:
+      containers:
+      - name: postgres
+        image: postgres:16-alpine
+        imagePullPolicy: IfNotPresent
+        env:
+        - name: POSTGRES_DB
+          value: notifications
+        - name: POSTGRES_USER
+          value: postgres
+        - name: POSTGRES_PASSWORD
+          value: postgres
+        ports:
+        - containerPort: 5432
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "250m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  labels:
+    app: workload
+spec:
+  selector:
+    component: postgres
+  ports:
+  - port: 5432
+    targetPort: 5432
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  labels:
+    app: workload
+    component: redis
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      component: redis
+  template:
+    metadata:
+      labels:
+        app: workload
+        component: redis
+    spec:
+      containers:
+      - name: redis
+        image: redis:7-alpine
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 6379
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "50m"
+          limits:
+            memory: "128Mi"
+            cpu: "100m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  labels:
+    app: workload
+spec:
+  selector:
+    component: redis
+  ports:
+  - port: 6379
+    targetPort: 6379
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nats
+  labels:
+    app: workload
+    component: nats
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      component: nats
+  template:
+    metadata:
+      labels:
+        app: workload
+        component: nats
+    spec:
+      containers:
+      - name: nats
+        image: nats:2-alpine
+        imagePullPolicy: IfNotPresent
+        ports:
+        - name: client
+          containerPort: 4222
+        - name: monitor
+          containerPort: 8222
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "50m"
+          limits:
+            memory: "128Mi"
+            cpu: "100m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nats
+  labels:
+    app: workload
+spec:
+  selector:
+    component: nats
+  ports:
+  - name: client
+    port: 4222
+    targetPort: 4222
+  - name: monitor
+    port: 8222
+    targetPort: 8222

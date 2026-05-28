@@ -1,71 +1,99 @@
-import { UserAvatar } from '@entities/user';
-import { cn } from '@shared/lib/utils';
 import { Link, useLocation } from 'react-router-dom';
+import { cn } from '@shared/lib/utils';
+import {
+  LayoutDashboard,
+  BookOpen,
+  CalendarX2,
+  BarChart3,
+  HelpCircle,
+  LogOut,
+  Sparkles,
+} from 'lucide-react';
 
 export const SideNavbar = () => {
-    const location = useLocation();
+  const location = useLocation();
 
-    const menuItems = [
-        { label: 'Dashboard', icon: 'dashboard', href: '/' },
-        { label: 'Curriculum', icon: 'auto_stories', href: '/roadmap' },
-        { label: 'Daily Tasks', icon: 'event_upcoming', href: '/daily-tasks' },
-        { label: 'Progress', icon: 'query_stats', href: '/progress' },
-        { label: 'Certificates', icon: 'verified', href: '/certificates' },
-    ];
+  const menuItems = [
+    { label: 'Dashboard', icon: LayoutDashboard, href: '/' },
+    { label: 'Curriculum', icon: BookOpen, href: '/roadmap' },
+    { label: 'Daily Tasks', icon: CalendarX2, href: '/daily-tasks' },
+    { label: 'Progress', icon: BarChart3, href: '/progress' },
+    { label: 'Certificates', icon: Sparkles, href: '/certificates' },
+  ];
 
-    return (
-        <nav className="bg-surface-container-low text-indigo-700 font-body hidden md:flex flex-col h-screen w-64 fixed left-0 top-0 py-8 z-40 transition-colors shadow-sm border-r border-indigo-100">
-            <div className="px-8 mb-8">
-                <UserAvatar
-                    name="The Scholar"
-                    level="Level 12 Architect"
-                    avatarUrl="https://lh3.googleusercontent.com/aida-public/AB6AXuDZd3YVx9uJWiJKOOvDVMuLPlNNz6WJOT1rqjXR6cZAatm16vejUKt0MXQvawk8nq-QHkC1uc6cUQN9t27SkgM9Pv4frkM0p3AUYoTKkcObz5o6W4k1ol-xq3St6gafAV6eVcHlJLzX0MEP3SfMXJ2YJEZmAYGrMw0T7eNIEOELbleHIpIlaCXUICV2bVOT7-441BiQcGBWTdo7fwrHDD4sAmPI2qf4eMvtjYTOGKAi14gvHWgfqLk-IjPlaCY8RgBCVYQKpa-q7l4"
-                />
+  return (
+    <nav className="hidden md:flex flex-col h-screen w-72 fixed left-0 top-0 z-40 bg-gradient-to-b from-indigo-50/50 to-violet-50/50">
+      {/* User Profile Card */}
+      <div className="px-6 pt-8 pb-4">
+        <div className="bg-white rounded-3xl p-5 shadow-[6px_8px_20px_rgba(79,70,229,0.12),inset_2px_2px_8px_rgba(255,255,255,0.8)] border-3 border-white">
+          <div className="flex items-center gap-4">
+            <div className="relative">
+              <div className="w-16 h-16 bg-gradient-to-br from-indigo-500 to-violet-500 rounded-2xl flex items-center justify-center shadow-[4px_4px_12px_rgba(79,70,229,0.3)]">
+                <span className="text-white font-bold text-2xl">T</span>
+              </div>
+              <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-emerald-400 rounded-full border-3 border-white" />
             </div>
-
-            <div className="px-8 mb-8">
-                <button className="w-full bg-primary text-on-primary font-headline font-medium py-3 px-4 rounded-lg hover:bg-primary-container transition-colors shadow-sm active:scale-95 duration-200">
-                    Start Daily Lab
-                </button>
+            <div>
+              <h2 className="text-slate-900 font-bold text-lg">The Scholar</h2>
+              <p className="text-indigo-600 font-semibold text-sm">Level 12 Architect</p>
             </div>
+          </div>
+          <div className="mt-4 flex items-center gap-2 bg-indigo-50 rounded-xl px-3 py-2">
+            <Sparkles className="w-4 h-4 text-amber-500" />
+            <span className="text-indigo-700 font-bold text-sm">1,240 XP</span>
+          </div>
+        </div>
+      </div>
 
-            <ul className="flex flex-col flex-grow gap-2">
-                {menuItems.map((item) => {
-                    const active = location.pathname === item.href;
-                    return (
-                        <li key={item.label}>
-                            <Link
-                                to={item.href}
-                                className={cn(
-                                    "flex items-center gap-4 py-3 font-label text-[10px] tracking-widest uppercase transition-all duration-300",
-                                    active
-                                        ? "bg-white text-indigo-700 rounded-l-full ml-4 pl-4 shadow-[0_4px_12px_rgb(67,56,202,0.1)] border-l-4 border-indigo-600"
-                                        : "px-8 text-slate-500 hover:text-indigo-600 hover:bg-white/50"
-                                )}
-                            >
-                                <span
-                                    className="material-symbols-outlined text-lg"
-                                    style={active ? { fontVariationSettings: "'FILL' 1" } : {}}
-                                >
-                                    {item.icon}
-                                </span>
-                                {item.label}
-                            </Link>
-                        </li>
-                    );
-                })}
-            </ul>
+      {/* Daily Lab CTA */}
+      <div className="px-6 mb-6">
+        <button className="w-full bg-gradient-to-br from-emerald-500 to-teal-500 text-white font-bold py-4 px-5 rounded-2xl shadow-[6px_6px_20px_rgba(16,185,129,0.3),-2px_-2px_8px_rgba(255,255,255,0.3)_inset] hover:shadow-[8px_8px_28px_rgba(16,185,129,0.4),-2px_-2px_8px_rgba(255,255,255,0.4)_inset] hover:translate-y-[-2px] active:translate-y-[1px] transition-all duration-200 flex items-center justify-center gap-2">
+          <Sparkles className="w-5 h-5" />
+          Start Daily Lab
+        </button>
+      </div>
 
-            <div className="mt-auto flex flex-col gap-2">
-                <Link to="/help" className="flex items-center gap-4 px-8 py-3 text-slate-500 hover:text-indigo-600 hover:bg-white/50 transition-all font-label text-[10px] tracking-widest uppercase">
-                    <span className="material-symbols-outlined text-lg">help</span>
-                    Help Center
-                </Link>
-                <Link to="/logout" className="flex items-center gap-4 px-8 py-3 text-slate-500 hover:text-indigo-600 hover:bg-white/50 transition-all font-label text-[10px] tracking-widest uppercase">
-                    <span className="material-symbols-outlined text-lg">logout</span>
-                    Logout
-                </Link>
-            </div>
-        </nav>
-    );
+      {/* Navigation Menu */}
+      <ul className="flex flex-col flex-grow gap-3 px-4">
+        {menuItems.map((item) => {
+          const Icon = item.icon;
+          const isActive = location.pathname === item.href;
+          return (
+            <li key={item.label}>
+              <Link
+                to={item.href}
+                className={cn(
+                  "flex items-center gap-4 py-3.5 px-5 rounded-2xl font-semibold transition-all duration-200",
+                  isActive
+                    ? "bg-white text-indigo-700 shadow-[6px_8px_20px_rgba(79,70,229,0.15),inset_2px_2px_8px_rgba(255,255,255,0.8)] border-2 border-indigo-100"
+                    : "text-slate-600 hover:bg-white/70 hover:text-indigo-600 shadow-[3px_3px_10px_rgba(79,70,229,0.06)]"
+                )}
+              >
+                <Icon className={cn("w-5 h-5", isActive ? "text-indigo-600" : "text-slate-400")} />
+                {item.label}
+              </Link>
+            </li>
+          );
+        })}
+      </ul>
+
+      {/* Footer Links */}
+      <div className="p-4 space-y-2">
+        <Link
+          to="/help"
+          className="flex items-center gap-4 px-5 py-3 text-slate-500 hover:text-indigo-600 hover:bg-white/70 rounded-xl transition-all font-medium shadow-[2px_2px_8px_rgba(79,70,229,0.04)] hover:shadow-[4px_4px_12px_rgba(79,70,229,0.12)]"
+        >
+          <HelpCircle className="w-5 h-5" />
+          Help Center
+        </Link>
+        <Link
+          to="/logout"
+          className="flex items-center gap-4 px-5 py-3 text-slate-500 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all font-medium shadow-[2px_2px_8px_rgba(79,70,229,0.04)] hover:shadow-[4px_4px_12px_rgba(220,38,38,0.12)]"
+        >
+          <LogOut className="w-5 h-5" />
+          Logout
+        </Link>
+      </div>
+    </nav>
+  );
 };

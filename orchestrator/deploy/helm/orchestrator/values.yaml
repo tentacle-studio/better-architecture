@@ -8,6 +8,7 @@ image:
 service:
   type: ClusterIP
   port: 50051
+  metricsPort: 9090
 
 resources:
   limits:
@@ -26,6 +27,7 @@ env:
   MAX_SANDBOXES_PER_USER: "5"
   NATS_URL: "nats://nats:4222"
   OTEL_ENDPOINT: "otel-collector:4317"
+  METRICS_PORT: "9090"
   TESTER_POD_CIDR: "10.244.0.0/16"
   HEALTH_CHECK_INTERVAL: "2s"
   HEALTH_CHECK_TIMEOUT: "90s"

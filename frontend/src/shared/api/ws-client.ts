@@ -9,6 +9,17 @@ export interface WsClientOptions {
   onStatusChange?: (status: WsStatus) => void
 }
 
+function getAuthToken(): string | null {
+  return localStorage.getItem('access_token')
+}
+
+function appendToken(url: string): string {
+  const token = getAuthToken()
+  if (!token) return url
+  const sep = url.includes('?') ? '&' : '?'
+  return `${url}${sep}token=${encodeURIComponent(token)}`
+}
+
 export class WsClient {
   private readonly options: WsClientOptions
   private ws: WebSocket | null = null
@@ -26,7 +37,8 @@ export class WsClient {
   connect(): void {
     if (this.closed) return
     this.setStatus('connecting')
-    this.ws = new WebSocket(this.options.url)
+    const urlWithToken = appendToken(this.options.url)
+    this.ws = new WebSocket(urlWithToken)
     this.ws.binaryType = 'arraybuffer'
 
     this.ws.onopen = () => {

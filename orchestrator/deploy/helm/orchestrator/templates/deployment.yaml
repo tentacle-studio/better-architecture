@@ -13,6 +13,10 @@ spec:
     metadata:
       labels:
         {{- include "orchestrator.selectorLabels" . | nindent 8 }}
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: "/metrics"
+        prometheus.io/port: {{ .Values.service.metricsPort | quote }}
     spec:
       serviceAccountName: {{ .Values.serviceAccount.name }}
       containers:
@@ -22,6 +26,9 @@ spec:
         ports:
         - name: grpc
           containerPort: {{ .Values.service.port }}
+          protocol: TCP
+        - name: metrics
+          containerPort: {{ .Values.service.metricsPort }}
           protocol: TCP
         env:
         {{- range $key, $value := .Values.env }}

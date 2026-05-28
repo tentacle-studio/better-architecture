@@ -30,6 +30,7 @@ func main() {
 		TesterPodCIDR:        cfg.TesterPodCIDR,
 		VClusterChartRepo:    cfg.VClusterChartRepo,
 		VClusterChartVersion: cfg.VClusterChartVersion,
+		PrometheusURL:        cfg.PrometheusURL,
 	}
 
 	worker, err := workflow.NewWorker(workerConfig)

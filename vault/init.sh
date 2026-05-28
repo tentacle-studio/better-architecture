@@ -4,8 +4,8 @@ set -e
 echo ">>> Seeding gateway secrets into Vault KV v2..."
 
 vault kv put secret/gateway \
-  DATABASE_URL="postgresql://gateway:gateway@localhost:5432/gateway" \
-  REDIS_URL="redis://localhost:6379" \
+  DATABASE_URL="postgresql://gateway:gateway@postgres:5432/gateway" \
+  REDIS_URL="redis://redis:6379" \
   JWT_SECRET="dev-jwt-secret-change-in-production-min32chars"
 
 echo ">>> Creating gateway policy..."

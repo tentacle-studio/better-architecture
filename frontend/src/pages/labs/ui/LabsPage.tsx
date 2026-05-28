@@ -1,19 +1,20 @@
-import { memo, useState, useCallback } from "react"
+import { memo, useState, useCallback, useEffect } from "react"
 import { useParams } from "react-router-dom"
-import { Header } from "./CanvasHeader"
-import { Toolbar } from "./CanvasToolbar"
-import { LeftSidebar } from "./LeftSidebar"
-import { PropertiesPanel } from "./PropertiesPanel"
-import { Canvas } from "./Canvas"
-import { BottomPanel } from "./BottomPanel"
-import { TerminalSquare, Code2, Layers, CheckCircle, XCircle, Send } from "lucide-react"
+import { TerminalSquare, Code2, Layers, CheckCircle, XCircle, Send, Activity } from "lucide-react"
 import { Button } from "@/shared/ui/button"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/tooltip"
 import { cn } from "@/shared/lib/utils"
 import { useCanvasSync } from "@features/sandbox"
 import type { CanvasMessage } from "@features/sandbox"
-import { submitLab } from "@entities/lab"
-import type { QuizCheck } from "@entities/lab"
+import { getLatencySnapshot, LatencyDashboard, submitLab } from "@entities/lab"
+import type { LatencySnapshot, QuizCheck } from "@entities/lab"
+import { ResourceList, useResourceStream } from "@entities/resource"
+import { BottomPanel } from "./BottomPanel"
+import { Canvas } from "./Canvas"
+import { Header } from "./CanvasHeader"
+import { LeftSidebar } from "./LeftSidebar"
+import { PropertiesPanel } from "./PropertiesPanel"
+import { Toolbar } from "./CanvasToolbar"
 import { applyResourceMessage, applyTrafficMessage } from "../model/traffic-sync"
 import type { ResourceMessage, TrafficMessage } from "../model/traffic-sync"
 
@@ -22,7 +23,6 @@ const MemoizedHeader = memo(Header)
 const MemoizedToolbar = memo(Toolbar)
 const MemoizedLeftSidebar = memo(LeftSidebar)
 const MemoizedPropertiesPanel = memo(PropertiesPanel)
-const MemoizedCanvas = memo(Canvas)
 
 export default function LabsPage() {
     const { labId, sandboxId } = useParams<{ labId?: string; sandboxId?: string }>()
@@ -32,6 +32,17 @@ export default function LabsPage() {
     const [bottomPanelHeight, setBottomPanelHeight] = useState(260)
     const [submitResult, setSubmitResult] = useState<QuizCheck | null>(null)
     const [submitting, setSubmitting] = useState(false)
+    const [showResourceList, setShowResourceList] = useState(false)
+    const [showLatencyPanel, setShowLatencyPanel] = useState(true)
+    const [latencySnapshot, setLatencySnapshot] = useState<LatencySnapshot | null>(null)
+    const [latencyLoading, setLatencyLoading] = useState(false)
+
+    // Resource streaming
+    const wsUrl = `ws://${window.location.host}`
+    const { resources, isLoading, error } = useResourceStream({
+        sandboxId: sandboxId ?? null,
+        wsUrl,
+    })
 
     const handleCanvasMsg = useCallback((msg: CanvasMessage) => {
         if (msg.type === "resource_event" || msg.type === "batch") {
@@ -42,6 +53,34 @@ export default function LabsPage() {
     }, [])
 
     useCanvasSync(sandboxId ?? null, handleCanvasMsg)
+
+    useEffect(() => {
+        if (!labId || !sandboxId) {
+            setLatencySnapshot(null)
+            return
+        }
+
+        let cancelled = false
+
+        const load = async () => {
+            setLatencyLoading(true)
+            const snapshot = await getLatencySnapshot(labId, sandboxId)
+            if (!cancelled) {
+                setLatencySnapshot(snapshot)
+                setLatencyLoading(false)
+            }
+        }
+
+        void load()
+        const interval = window.setInterval(() => {
+            void load()
+        }, 5000)
+
+        return () => {
+            cancelled = true
+            window.clearInterval(interval)
+        }
+    }, [labId, sandboxId])
 
     const handleSubmit = async () => {
         if (!labId || !sandboxId) return
@@ -61,23 +100,49 @@ export default function LabsPage() {
                 <div className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
                     <MemoizedToolbar />
 
-                    {/* Canvas + floating layers */}
+                    {/* Canvas + floating layers + resource list */}
                     <div className="relative min-h-0 flex-1 overflow-hidden">
                         {showLayers && (
-                            <MemoizedPropertiesPanel onClose={() => setShowLayers(false)} />
+                            <MemoizedPropertiesPanel />
                         )}
-                        <MemoizedCanvas />
+                        {/* Resource list overlay */}
+                        {showResourceList && (
+                            <div className="absolute top-4 right-4 z-20 w-80 max-h-[400px] overflow-auto rounded-lg border bg-white shadow-xl">
+                                <div className="flex items-center justify-between border-b px-4 py-2">
+                                    <h3 className="text-sm font-semibold">Resources</h3>
+                                    <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-6 w-6"
+                                        onClick={() => setShowResourceList(false)}
+                                    >
+                                        <XCircle className="h-3 w-3" />
+                                    </Button>
+                                </div>
+                                <div className="p-4">
+                                    <ResourceList resources={resources} isLoading={isLoading} error={error} />
+                                </div>
+                            </div>
+                        )}
+                        {showLatencyPanel && sandboxId && (
+                            <LatencyDashboard
+                                snapshot={latencySnapshot}
+                                isLoading={latencyLoading}
+                                className="absolute top-4 left-4 z-20"
+                            />
+                        )}
+                        <Canvas labId={labId} />
                     </div>
 
-                    {/* Bottom panel (Terminal / Editor) */}
-                    {showBottomPanel && (
+                    {/* Bottom panel (Terminal / Editor) — always mounted to preserve terminal session */}
+                    <div className={showBottomPanel ? undefined : "hidden"}>
                         <BottomPanel
                             height={bottomPanelHeight}
                             onHeightChange={setBottomPanelHeight}
                             onClose={() => setShowBottomPanel(false)}
                             sandboxId={sandboxId}
                         />
-                    )}
+                    </div>
                 </div>
 
                 {/* Status bar panel toggles */}
@@ -111,15 +176,15 @@ export default function LabsPage() {
                                     size="icon"
                                     className={cn(
                                         "h-7 w-7 text-slate-400 hover:text-slate-200 hover:bg-white/8",
-                                        showBottomPanel && "bg-white/10 text-slate-200"
+                                        showResourceList && "bg-white/10 text-slate-200"
                                     )}
-                                    onClick={() => setShowBottomPanel((v) => !v)}
+                                    onClick={() => setShowResourceList((v) => !v)}
                                 >
                                     <TerminalSquare className="h-3.5 w-3.5" />
                                 </Button>
                             </TooltipTrigger>
                             <TooltipContent side="top">
-                                {showBottomPanel ? "Hide Terminal / Editor" : "Show Terminal / Editor"}
+                                {showResourceList ? "Hide Resources" : "Show Resources"}
                             </TooltipContent>
                         </Tooltip>
 
@@ -138,9 +203,30 @@ export default function LabsPage() {
                                 </Button>
                             </TooltipTrigger>
                             <TooltipContent side="top">
-                                {showBottomPanel ? "Hide Terminal / Editor" : "Show Editor"}
+                                {showBottomPanel ? "Hide Terminal / Editor" : "Show Terminal / Editor"}
                             </TooltipContent>
                         </Tooltip>
+
+                        {sandboxId && (
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className={cn(
+                                            "h-7 w-7 text-slate-400 hover:text-slate-200 hover:bg-white/8",
+                                            showLatencyPanel && "bg-white/10 text-slate-200"
+                                        )}
+                                        onClick={() => setShowLatencyPanel((v) => !v)}
+                                    >
+                                        <Activity className="h-3.5 w-3.5" />
+                                    </Button>
+                                </TooltipTrigger>
+                                <TooltipContent side="top">
+                                    {showLatencyPanel ? "Hide Latency Dashboard" : "Show Latency Dashboard"}
+                                </TooltipContent>
+                            </Tooltip>
+                        )}
 
                         {sandboxId && (
                             <>

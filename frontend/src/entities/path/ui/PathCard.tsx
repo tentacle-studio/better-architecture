@@ -1,5 +1,6 @@
 import type { LearningPath } from '../model/learning-path';
 import { cn } from '@shared/lib/utils';
+import { Clock, TrendingUp, Bookmark, ArrowRight } from 'lucide-react';
 
 interface PathCardProps {
   path: LearningPath;
@@ -7,54 +8,78 @@ interface PathCardProps {
 
 export const PathCard = ({ path }: PathCardProps) => {
   const colorMap = {
-    primary: 'from-primary to-primary-container',
-    secondary: 'from-secondary to-secondary-container',
-    tertiary: 'from-tertiary to-tertiary-container',
+    primary: {
+      bg: 'bg-indigo-500',
+      gradient: 'from-indigo-500 to-indigo-600',
+      text: 'text-indigo-600',
+      lightBg: 'bg-indigo-100',
+      hover: 'hover:shadow-indigo-200',
+    },
+    secondary: {
+      bg: 'bg-violet-500',
+      gradient: 'from-violet-500 to-violet-600',
+      text: 'text-violet-600',
+      lightBg: 'bg-violet-100',
+      hover: 'hover:shadow-violet-200',
+    },
+    tertiary: {
+      bg: 'bg-blue-500',
+      gradient: 'from-blue-500 to-blue-600',
+      text: 'text-blue-600',
+      lightBg: 'bg-blue-100',
+      hover: 'hover:shadow-blue-200',
+    },
   };
 
-  const textColorMap = {
-    primary: 'text-primary',
-    secondary: 'text-secondary',
-    tertiary: 'text-tertiary',
-  };
+  const style = colorMap[path.colorScheme as keyof typeof colorMap] || colorMap.primary;
 
   return (
-    <div className="bg-surface-container-lowest rounded-xl p-6 shadow-sm border border-outline-variant/20 hover:shadow-md transition-shadow flex flex-col h-full group relative overflow-hidden">
-      <div className={cn(
-        "absolute top-0 left-0 w-1 h-full bg-gradient-to-b group-hover:w-1.5 transition-all",
-        colorMap[path.colorScheme]
-      )} />
-      
-      <div className="flex justify-between items-start mb-4">
-        <span className={cn(
-          "bg-surface-container-low font-label text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wider",
-          textColorMap[path.colorScheme]
-        )}>
-          {path.category}
-        </span>
-        <span className="material-symbols-outlined text-outline">bookmark_border</span>
-      </div>
+    <div className={cn(
+      "relative bg-white rounded-3xl p-6 border-3 border-white transition-all duration-300 cursor-pointer",
+      "shadow-[6px_8px_20px_rgba(79,70,229,0.12),inset_2px_2px_8px_rgba(255,255,255,0.8)]",
+      "hover:shadow-[8px_12px_30px_rgba(79,70,229,0.18),inset_2px_2px_8px_rgba(255,255,255,0.9)]",
+      "hover:-translate-y-1",
+      style.hover
+    )}>
+      {/* Decorative corner accent */}
+      <div className={cn("absolute top-0 right-0 w-16 h-16 rounded-bl-full opacity-20", style.bg)} />
 
-      <h3 className="text-xl font-headline font-bold text-on-surface mb-2">{path.title}</h3>
-      <p className="text-on-surface-variant font-body text-sm mb-6 flex-grow">{path.description}</p>
-      
-      <div className="flex items-center justify-between mt-auto pt-4 border-t border-outline-variant/20">
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-1 text-on-surface-variant font-label text-xs">
-            <span className="material-symbols-outlined text-sm">schedule</span>
-            <span>{path.duration}</span>
+      <div className="relative">
+        {/* Category badge */}
+        <div className={cn("inline-flex items-center gap-1.5 px-4 py-2 rounded-full font-bold text-xs uppercase tracking-wider mb-4", style.lightBg, style.text)}>
+          <TrendingUp className="w-3.5 h-3.5" />
+          {path.category}
+        </div>
+
+        {/* Title */}
+        <h3 className="text-xl font-bold text-slate-900 mb-3 leading-tight">{path.title}</h3>
+
+        {/* Description */}
+        <p className="text-slate-600 text-sm leading-relaxed mb-6 line-clamp-2">{path.description}</p>
+
+        {/* Meta info */}
+        <div className="flex items-center gap-4 mb-4">
+          <div className="flex items-center gap-1.5 text-slate-500 text-sm font-semibold">
+            <Clock className="w-4 h-4 text-slate-400" />
+            {path.duration}
           </div>
-          <div className="flex items-center gap-1 text-on-surface-variant font-label text-xs">
-            <span className="material-symbols-outlined text-sm">signal_cellular_alt</span>
-            <span>{path.level}</span>
+          <div className="flex items-center gap-1.5 text-slate-500 text-sm font-semibold">
+            <Bookmark className="w-4 h-4 text-slate-400" />
+            {path.level}
           </div>
         </div>
-        <button className={cn(
-          "p-1 rounded-full hover:bg-surface-container-low transition-colors",
-          textColorMap[path.colorScheme]
-        )}>
-          <span className="material-symbols-outlined">arrow_forward</span>
-        </button>
+
+        {/* Arrow button */}
+        <div className="flex items-center justify-end">
+          <div className={cn(
+            "flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-sm transition-all duration-200",
+            style.lightBg, style.text,
+            "hover:shadow-[4px_4px_12px_rgba(0,0,0,0.1)]"
+          )}>
+            Start Path
+            <ArrowRight className="w-4 h-4" />
+          </div>
+        </div>
       </div>
     </div>
   );

@@ -3,6 +3,7 @@ import type { WebSocket } from '@fastify/websocket';
 import type { SessionService } from '../services/session-service.js';
 import type { NatsClient } from '../services/nats-client.js';
 import type { RawTrafficEvent, TrafficEvent } from '../types/shared.js';
+import { finishSpan, recordTrafficEvents, startSpan, trackWebSocketConnection } from '../observability/telemetry.js';
 
 const BATCH_WINDOW_MS = 100;
 
@@ -40,6 +41,7 @@ export async function trafficWebSocket(
 
     let batch: TrafficEvent[] = [];
     let flushTimer: ReturnType<typeof setTimeout> | null = null;
+    const releaseConnection = trackWebSocketConnection('traffic');
 
     const flush = () => {
       if (batch.length === 0) return;
@@ -53,8 +55,19 @@ export async function trafficWebSocket(
     let stopTraffic: (() => void) | null = null;
     try {
       stopTraffic = await opts.natsClient.subscribeTraffic(userId, sandboxId, (raw) => {
+        const span = startSpan('gateway.ws.message', {
+          'ws.type': 'traffic',
+          'ws.sandbox_id': sandboxId,
+        });
+
         batch.push(transformEvent(raw));
+        recordTrafficEvents(sandboxId, 1);
         if (!flushTimer) flushTimer = setTimeout(flush, BATCH_WINDOW_MS);
+        finishSpan(span, {
+          attributes: {
+            'ws.message_kind': 'traffic_event',
+          },
+        });
       });
     } catch (err) {
       fastify.log.error({ err, sandboxId }, 'Failed to subscribe to NATS traffic');
@@ -70,6 +83,7 @@ export async function trafficWebSocket(
       clearInterval(pingInterval);
       if (flushTimer) clearTimeout(flushTimer);
       if (stopTraffic) stopTraffic();
+      releaseConnection();
     });
   });
 }

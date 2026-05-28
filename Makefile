@@ -48,21 +48,17 @@ frontend-build:
 
 # ─── Dev servers ─────────────────────────────────────────────────────────────
 
-dev: vault-init gateway-dev frontend-dev
+dev: vault-init
+	@echo "Preparing kubeconfig for Docker..."
+	@./scripts/prepare-kubeconfig.sh
+	@if [ -z "$$KUBECONFIG" ]; then \
+		export KUBECONFIG=$$HOME/.kube/config; \
+	fi; \
+	docker compose up --build -d
 
-dev-full: vault-init orchestrator-temporal-up
-	@echo "Building gateway and frontend containers..."
-	docker compose --profile full build gateway frontend
-	@echo "Starting gateway and frontend containers..."
-	docker compose --profile full up -d gateway frontend
-	@echo "Starting orchestrator... Press Ctrl+C to stop all services"
-	@trap 'docker compose --profile full stop gateway frontend; kill 0' INT; \
-	$(MAKE) orchestrator-run & \
-	wait
-
-dev-full-down:
+dev-down:
 	@echo "Stopping gateway and frontend containers..."
-	docker compose --profile full stop gateway frontend
+	docker compose down
 
 gateway-dev:
 	@echo "Starting gateway dev server..."
@@ -167,12 +163,12 @@ frontend-helm-uninstall:
 
 vault-up:
 	@echo "Starting local dev stack (Vault + Postgres + Redis + NATS)..."
-	docker compose up -d vault postgres redis nats
+	docker compose up -d vault temporal-postgresql redis nats
 
 vault-init: vault-up
 	@echo "Waiting for Vault to be healthy then seeding secrets..."
 	docker compose up --wait vault
-	docker compose run --rm vault-init
+	docker compose --profile init run --rm vault-init
 
 vault-down:
 	@echo "Stopping local dev stack..."

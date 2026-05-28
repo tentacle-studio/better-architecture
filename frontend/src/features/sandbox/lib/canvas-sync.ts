@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { WsClient } from '@shared/api'
 import type { WsStatus } from '@shared/api'
+import { useAuthStore } from '@features/auth'
 import { useSandboxStore } from '../model/sandbox-store'
 import type { ConnectionStatus } from '../model/sandbox-store'
 
@@ -43,9 +44,10 @@ export function useCanvasSync(
   onMessageRef.current = onMessage
 
   const setCanvasStatus = useSandboxStore((s) => s.setCanvasStatus)
+  const accessToken = useAuthStore((s) => s.accessToken)
 
   useEffect(() => {
-    if (!sandboxId) return
+    if (!sandboxId || !accessToken) return
 
     const ws = new WsClient({
       url: `${WS_BASE}/ws/canvas/${sandboxId}`,
@@ -70,5 +72,5 @@ export function useCanvasSync(
       unsub()
       ws.close()
     }
-  }, [sandboxId, setCanvasStatus])
+  }, [sandboxId, setCanvasStatus, accessToken])
 }

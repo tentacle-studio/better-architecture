@@ -7,6 +7,7 @@ import { Progress } from '@pages/progress';
 import { DailyTasks } from '@pages/daily-tasks';
 import { LoginPage } from '@pages/login';
 import { LabDetailPage } from '@pages/lab-detail';
+import { LabsExplorationPage } from '@pages/labs-exploration';
 import { AuthGuard } from '@features/auth';
 
 function guard(element: ReactElement) {
@@ -22,4 +23,5 @@ export const appRouter = createBrowserRouter([
     { path: '/roadmap',                            element: guard(<Roadmap />) },
     { path: '/progress',                           element: guard(<Progress />) },
     { path: '/daily-tasks',                        element: guard(<DailyTasks />) },
+    { path: '/explore',                            element: guard(<LabsExplorationPage />) },
 ]);

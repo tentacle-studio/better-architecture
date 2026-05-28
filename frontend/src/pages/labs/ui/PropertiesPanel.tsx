@@ -17,7 +17,6 @@ import {
   ChevronDown,
   Layers,
   ChevronRight,
-  X,
 } from "lucide-react"
 import { Button } from "@shared/ui/button"
 import { Input } from "@shared/ui/input"
@@ -38,11 +37,7 @@ const typeIcons: Record<ElementType, React.ReactNode> = {
   image: <Image className="h-3.5 w-3.5" />,
 }
 
-interface PropertiesPanelProps {
-  onClose?: () => void
-}
-
-export function PropertiesPanel({ onClose }: PropertiesPanelProps) {
+export function PropertiesPanel() {
   const [isCollapsed, setIsCollapsed] = useState(false)
   const [width, setWidth] = useState(240)
   const [isResizing, setIsResizing] = useState(false)
@@ -123,9 +118,11 @@ export function PropertiesPanel({ onClose }: PropertiesPanelProps) {
       <div className="flex items-center justify-between border-b border-gray-100 px-3 py-2">
         <div className="flex items-center gap-2">
           <Layers className="h-4 w-4 text-gray-500" />
-          <span className="text-sm font-medium text-gray-700">Layers</span>
+          <span className="text-sm font-medium text-gray-700">
+            {nodes.length > 0 ? 'Infrastructure' : 'Layers'}
+          </span>
           <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] text-gray-500">
-            {elements.length}
+            {nodes.length > 0 ? nodes.length : elements.length}
           </span>
         </div>
         <div className="flex items-center gap-0.5">
@@ -142,123 +139,149 @@ export function PropertiesPanel({ onClose }: PropertiesPanelProps) {
             </TooltipTrigger>
             <TooltipContent side="left">Collapse</TooltipContent>
           </Tooltip>
-          {onClose && (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-6 w-6 text-gray-400 hover:text-red-500 hover:bg-red-50"
-                  onClick={onClose}
-                >
-                  <X className="h-3.5 w-3.5" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="left">Remove panel</TooltipContent>
-            </Tooltip>
-          )}
         </div>
       </div>
 
       {/* Layers & Properties Section */}
       <ScrollArea className="flex-1 px-2">
-        {/* Layers Section */}
+        {/* Infrastructure Nodes or Layers Section */}
         <div className="border-t border-gray-100 py-3">
-          {/* <div className="mb-2 flex items-center gap-2 px-3">
-            <Layers className="h-4 w-4 text-gray-500" />
-            <span className="text-xs font-medium text-gray-500 uppercase tracking-wider">Layers</span>
-            <span className="ml-auto rounded bg-gray-100 px-1.5 py-0.5 text-[10px] text-gray-500">
-              {elements.length}
-            </span>
-          </div> */}
-
           <div className="space-y-0.5 px-1">
-            {reversedElements.map((element) => {
-              const isSelected = selectedIds.includes(element.id)
-
-              return (
-                <div
-                  key={element.id}
-                  className={cn(
-                    "group flex items-center gap-2 rounded-md px-2 py-1.5 transition-colors cursor-pointer",
-                    isSelected
-                      ? "bg-primary/15 text-gray-900"
-                      : "hover:bg-gray-50 text-gray-600 hover:text-gray-900"
-                  )}
-                  onClick={() => selectElement(element.id)}
-                >
+            {/* Show infrastructure nodes if available */}
+            {nodes.length > 0 ? (
+              nodes.map((node) => {
+                const isSelected = selectedNodeId === node.id
+                return (
                   <div
+                    key={node.id}
                     className={cn(
-                      "flex h-5 w-5 items-center justify-center rounded",
-                      isSelected ? "text-primary" : "text-gray-400"
+                      "group flex items-center gap-2 rounded-md px-2 py-2 transition-all cursor-pointer",
+                      isSelected
+                        ? "bg-gradient-to-r from-primary/10 to-primary/5 border border-primary/20 shadow-sm"
+                        : "hover:bg-gray-50 text-gray-600 hover:text-gray-900 border border-transparent"
                     )}
+                    onClick={() => useWorkflowStore.getState().selectNode(node.id)}
                   >
-                    {typeIcons[element.type]}
-                  </div>
+                    <div className="flex h-7 w-7 items-center justify-center rounded-md"
+                      style={{
+                        backgroundColor: isSelected
+                          ? `#${node.accentColor.toString(16).padStart(6, "0")}15`
+                          : `#${node.accentColor.toString(16).padStart(6, "0")}08`
+                      }}
+                    >
+                      <span className="text-sm">{node.icon}</span>
+                    </div>
 
-                  <span
+                    <div className="flex-1 min-w-0">
+                      <p className={cn(
+                        "truncate text-xs font-medium",
+                        isSelected ? "text-gray-900" : "text-gray-700"
+                      )}>
+                        {node.label}
+                      </p>
+                      {node.sublabel && (
+                        <p className="truncate text-[10px] text-gray-400">
+                          {node.sublabel}
+                        </p>
+                      )}
+                    </div>
+
+                    <div
+                      className="h-2 w-2 flex-shrink-0 rounded-full"
+                      style={{ backgroundColor: `#${node.accentColor.toString(16).padStart(6, "0")}` }}
+                    />
+                  </div>
+                )
+              })
+            ) : (
+              /* Fallback to regular elements */
+              reversedElements.map((element) => {
+                const isSelected = selectedIds.includes(element.id)
+
+                return (
+                  <div
+                    key={element.id}
                     className={cn(
-                      "flex-1 truncate text-xs",
-                      !element.visible && "opacity-50"
+                      "group flex items-center gap-2 rounded-md px-2 py-1.5 transition-colors cursor-pointer",
+                      isSelected
+                        ? "bg-primary/15 text-gray-900"
+                        : "hover:bg-gray-50 text-gray-600 hover:text-gray-900"
                     )}
+                    onClick={() => selectElement(element.id)}
                   >
-                    {element.name}
-                  </span>
+                    <div
+                      className={cn(
+                        "flex h-5 w-5 items-center justify-center rounded",
+                        isSelected ? "text-primary" : "text-gray-400"
+                      )}
+                    >
+                      {typeIcons[element.type]}
+                    </div>
 
-                  <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-5 w-5"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            toggleVisibility(element.id)
-                          }}
-                        >
-                          {element.visible ? (
-                            <Eye className="h-3 w-3" />
-                          ) : (
-                            <EyeOff className="h-3 w-3" />
-                          )}
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent side="right">
-                        {element.visible ? "Hide" : "Show"}
-                      </TooltipContent>
-                    </Tooltip>
+                    <span
+                      className={cn(
+                        "flex-1 truncate text-xs",
+                        !element.visible && "opacity-50"
+                      )}
+                    >
+                      {element.name}
+                    </span>
 
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-5 w-5"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            toggleLock(element.id)
-                          }}
-                        >
-                          {element.locked ? (
-                            <Lock className="h-3 w-3 text-amber-500" />
-                          ) : (
-                            <Unlock className="h-3 w-3" />
-                          )}
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent side="right">
-                        {element.locked ? "Unlock" : "Lock"}
-                      </TooltipContent>
-                    </Tooltip>
+                    <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-5 w-5"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              toggleVisibility(element.id)
+                            }}
+                          >
+                            {element.visible ? (
+                              <Eye className="h-3 w-3" />
+                            ) : (
+                              <EyeOff className="h-3 w-3" />
+                            )}
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent side="right">
+                          {element.visible ? "Hide" : "Show"}
+                        </TooltipContent>
+                      </Tooltip>
+
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-5 w-5"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              toggleLock(element.id)
+                            }}
+                          >
+                            {element.locked ? (
+                              <Lock className="h-3 w-3 text-amber-500" />
+                            ) : (
+                              <Unlock className="h-3 w-3" />
+                            )}
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent side="right">
+                          {element.locked ? "Unlock" : "Lock"}
+                        </TooltipContent>
+                      </Tooltip>
+                    </div>
                   </div>
-                </div>
-              )
-            })}
+                )
+              })
+            )}
           </div>
 
-          {/* Layer Actions */}
-          {selectedIds.length > 0 && (
+          {/* Layer Actions - only show for canvas elements */}
+          {nodes.length === 0 && selectedIds.length > 0 && (
             <div className="mt-2 flex items-center justify-between border-t border-gray-100 px-1 pt-2">
               <div className="flex items-center gap-0.5">
                 <Tooltip>
@@ -333,112 +356,161 @@ export function PropertiesPanel({ onClose }: PropertiesPanelProps) {
           {/* Workflow node properties */}
           {selectedNode ? (
             <div className="space-y-4 px-1">
-              {/* Node type badge */}
+              {/* Infrastructure Service Header */}
               <div className="px-2">
-                <div className="flex items-center gap-2 rounded-md border border-gray-100 bg-gray-50 px-3 py-2">
-                  <span className="text-base">{selectedNode.icon}</span>
-                  <div className="min-w-0">
-                    <p className="truncate text-xs font-semibold text-gray-900">{selectedNode.label}</p>
+                <div className="flex items-center gap-3 rounded-lg border-2 px-4 py-3"
+                  style={{
+                    borderColor: `#${selectedNode.accentColor.toString(16).padStart(6, "0")}30`,
+                    backgroundColor: `#${selectedNode.accentColor.toString(16).padStart(6, "0")}08`
+                  }}
+                >
+                  <span className="text-2xl">{selectedNode.icon}</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="truncate text-sm font-bold text-gray-900">{selectedNode.label}</p>
                     {selectedNode.sublabel && (
-                      <p className="truncate text-[10px] text-gray-400">{selectedNode.sublabel}</p>
+                      <p className="truncate text-xs text-gray-500 mt-0.5">{selectedNode.sublabel}</p>
                     )}
                   </div>
                   <div
-                    className="ml-auto h-2.5 w-2.5 flex-shrink-0 rounded-full"
+                    className="h-3 w-3 flex-shrink-0 rounded-full ring-2 ring-white"
                     style={{ backgroundColor: `#${selectedNode.accentColor.toString(16).padStart(6, "0")}` }}
                   />
                 </div>
               </div>
 
-              {/* Node type */}
-              <div className="space-y-1 px-2">
-                <Label className="text-[10px] uppercase tracking-wider text-gray-400">Type</Label>
-                <p className="rounded bg-gray-50 px-2 py-1.5 text-xs font-medium capitalize text-gray-700 border border-gray-100">
-                  {selectedNode.type}
-                </p>
-              </div>
-
-              {/* Position */}
-              <div className="space-y-2 px-2">
-                <Label className="text-[10px] uppercase tracking-wider text-gray-400">Position</Label>
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <Label className="text-[10px] text-gray-400">X</Label>
-                    <Input
-                      type="number"
-                      value={Math.round(selectedNode.x)}
-                      onChange={(e) => moveNode(selectedNode.id, Number(e.target.value), selectedNode.y)}
-                      className="h-8 border-gray-200 bg-gray-50 text-xs"
-                    />
-                  </div>
-                  <div>
-                    <Label className="text-[10px] text-gray-400">Y</Label>
-                    <Input
-                      type="number"
-                      value={Math.round(selectedNode.y)}
-                      onChange={(e) => moveNode(selectedNode.id, selectedNode.x, Number(e.target.value))}
-                      className="h-8 border-gray-200 bg-gray-50 text-xs"
-                    />
-                  </div>
+              {/* Service Type */}
+              <div className="space-y-1.5 px-2">
+                <Label className="text-[10px] uppercase tracking-wider text-gray-400 font-semibold">Service Type</Label>
+                <div className="rounded-md bg-gradient-to-r from-gray-50 to-gray-100 px-3 py-2 border border-gray-200">
+                  <p className="text-xs font-medium capitalize text-gray-700">
+                    {selectedNode.type === 'tool' ? 'Infrastructure Service' : selectedNode.type}
+                  </p>
                 </div>
               </div>
 
-              {/* Accent color */}
-              <div className="space-y-2 px-2">
-                <Label className="text-[10px] uppercase tracking-wider text-gray-400">Accent Color</Label>
-                <div className="flex items-center gap-2">
-                  <div
-                    className="h-8 w-8 flex-shrink-0 rounded border border-gray-200"
-                    style={{ backgroundColor: `#${selectedNode.accentColor.toString(16).padStart(6, "0")}` }}
-                  />
-                  <Input
-                    value={`#${selectedNode.accentColor.toString(16).padStart(6, "0")}`}
-                    readOnly
-                    className="h-8 flex-1 border-gray-200 bg-gray-50 text-xs font-mono text-gray-500"
-                  />
-                </div>
-              </div>
-
-              {/* Inputs */}
-              {selectedNode.inputs.length > 0 && (
-                <div className="space-y-1.5 px-2">
-                  <Label className="text-[10px] uppercase tracking-wider text-gray-400">
-                    Inputs ({selectedNode.inputs.length})
-                  </Label>
-                  <div className="space-y-1">
-                    {selectedNode.inputs.map((port) => (
-                      <div key={port.id} className="flex items-center gap-2 rounded bg-gray-50 border border-gray-100 px-2 py-1.5">
-                        <div className="h-2 w-2 rounded-full border-2 border-gray-400 bg-white" />
-                        <span className="text-xs text-gray-600">{port.label}</span>
-                        <span className="ml-auto text-[10px] text-gray-400 font-mono">{port.id}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Outputs */}
+              {/* Service Endpoint (from output port) */}
               {selectedNode.outputs.length > 0 && (
                 <div className="space-y-1.5 px-2">
-                  <Label className="text-[10px] uppercase tracking-wider text-gray-400">
-                    Outputs ({selectedNode.outputs.length})
+                  <Label className="text-[10px] uppercase tracking-wider text-gray-400 font-semibold">
+                    Service Endpoint
                   </Label>
-                  <div className="space-y-1">
-                    {selectedNode.outputs.map((port) => (
-                      <div key={port.id} className="flex items-center gap-2 rounded bg-gray-50 border border-gray-100 px-2 py-1.5">
-                        <span className="text-xs text-gray-600">{port.label}</span>
-                        <div className="ml-auto h-2 w-2 rounded-full border-2 border-gray-400 bg-white" />
-                        <span className="text-[10px] text-gray-400 font-mono">{port.id}</span>
+                  <div className="rounded-md bg-blue-50 border border-blue-200 px-3 py-2">
+                    <div className="flex items-center gap-2">
+                      <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
+                      <code className="text-xs font-mono text-blue-900">
+                        {selectedNode.id.replace('infra-', '')}:{selectedNode.outputs[0].label.replace('Port ', '')}
+                      </code>
+                    </div>
+                    <p className="text-[10px] text-blue-600 mt-1">Ready for connections</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Connection Details */}
+              <div className="space-y-1.5 px-2">
+                <Label className="text-[10px] uppercase tracking-wider text-gray-400 font-semibold">
+                  How to Connect
+                </Label>
+                <div className="rounded-md bg-gray-50 border border-gray-200 px-3 py-2 space-y-2">
+                  <div className="flex items-start gap-2">
+                    <span className="text-xs text-gray-400 mt-0.5">•</span>
+                    <div className="flex-1">
+                      <p className="text-xs text-gray-600">
+                        Host: <code className="font-mono text-gray-900 bg-white px-1 py-0.5 rounded border">{selectedNode.id.replace('infra-', '')}</code>
+                      </p>
+                    </div>
+                  </div>
+                  {selectedNode.outputs.length > 0 && (
+                    <div className="flex items-start gap-2">
+                      <span className="text-xs text-gray-400 mt-0.5">•</span>
+                      <div className="flex-1">
+                        <p className="text-xs text-gray-600">
+                          Port: <code className="font-mono text-gray-900 bg-white px-1 py-0.5 rounded border">
+                            {selectedNode.outputs[0].label.replace('Port ', '')}
+                          </code>
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                  <div className="flex items-start gap-2">
+                    <span className="text-xs text-gray-400 mt-0.5">•</span>
+                    <div className="flex-1">
+                      <p className="text-xs text-gray-600">
+                        Access from shell pod
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Input Connections */}
+              {selectedNode.inputs.length > 0 && (
+                <div className="space-y-1.5 px-2">
+                  <Label className="text-[10px] uppercase tracking-wider text-gray-400 font-semibold">
+                    Incoming Connections ({selectedNode.inputs.length})
+                  </Label>
+                  <div className="space-y-1.5">
+                    {selectedNode.inputs.map((port) => (
+                      <div key={port.id} className="flex items-center gap-2 rounded-md bg-purple-50 border border-purple-200 px-3 py-2">
+                        <div className="h-2.5 w-2.5 rounded-full border-2 border-purple-400 bg-white" />
+                        <span className="text-xs font-medium text-purple-900">{port.label}</span>
                       </div>
                     ))}
                   </div>
                 </div>
               )}
+
+              {/* Output Connections */}
+              {selectedNode.outputs.length > 0 && (
+                <div className="space-y-1.5 px-2">
+                  <Label className="text-[10px] uppercase tracking-wider text-gray-400 font-semibold">
+                    Outgoing Connections ({selectedNode.outputs.length})
+                  </Label>
+                  <div className="space-y-1.5">
+                    {selectedNode.outputs.map((port) => (
+                      <div key={port.id} className="flex items-center gap-2 rounded-md bg-emerald-50 border border-emerald-200 px-3 py-2">
+                        <span className="text-xs font-medium text-emerald-900">{port.label}</span>
+                        <div className="ml-auto h-2.5 w-2.5 rounded-full border-2 border-emerald-400 bg-white" />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Position (Advanced) */}
+              <details className="px-2">
+                <summary className="cursor-pointer text-[10px] uppercase tracking-wider text-gray-400 font-semibold mb-2">
+                  Advanced Settings
+                </summary>
+                <div className="space-y-2 mt-2">
+                  <Label className="text-[10px] text-gray-400">Canvas Position</Label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <Label className="text-[10px] text-gray-400">X</Label>
+                      <Input
+                        type="number"
+                        value={Math.round(selectedNode.x)}
+                        onChange={(e) => moveNode(selectedNode.id, Number(e.target.value), selectedNode.y)}
+                        className="h-7 border-gray-200 bg-gray-50 text-xs"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-[10px] text-gray-400">Y</Label>
+                      <Input
+                        type="number"
+                        value={Math.round(selectedNode.y)}
+                        onChange={(e) => moveNode(selectedNode.id, selectedNode.x, Number(e.target.value))}
+                        className="h-7 border-gray-200 bg-gray-50 text-xs"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </details>
             </div>
           ) : !selectedElement ? (
             <div className="flex h-24 items-center justify-center px-3">
               <p className="text-center text-xs text-gray-400">
-                Click a node to view its properties
+                Select an infrastructure node to view details
               </p>
             </div>
           ) : (

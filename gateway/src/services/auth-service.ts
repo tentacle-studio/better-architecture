@@ -1,4 +1,5 @@
 import * as jose from 'jose';
+import bcrypt from 'bcryptjs';
 import type { Config } from '../config.js';
 import type { JWTPayload } from '../types/shared.js';
 
@@ -55,5 +56,14 @@ export class AuthService {
   async verifyRefreshToken(token: string): Promise<JWTPayload> {
     const { payload } = await jose.jwtVerify(token, this.jwtSecret);
     return payload as unknown as JWTPayload;
+  }
+
+  async hashPassword(password: string): Promise<string> {
+    const saltRounds = 10;
+    return bcrypt.hash(password, saltRounds);
+  }
+
+  async verifyPassword(password: string, hash: string): Promise<boolean> {
+    return bcrypt.compare(password, hash);
   }
 }

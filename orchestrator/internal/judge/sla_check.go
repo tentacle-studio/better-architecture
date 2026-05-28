@@ -102,8 +102,8 @@ func (c *SLAChecker) queryP95Latency(ctx context.Context, sandboxID string, spec
 	}
 
 	query := fmt.Sprintf(
-		`histogram_quantile(0.95, rate(http_request_duration_ms_bucket{namespace=%q,service=%q}[%ds]))`,
-		sandboxID, service, sampleDuration,
+		`histogram_quantile(0.95, sum(rate(http_request_duration_ms_bucket{namespace=%q,service=%q}[%ds])) by (le))`,
+		namespaceForSandbox(sandboxID), service, sampleDuration,
 	)
 
 	return c.queryPrometheus(ctx, query)
@@ -161,6 +161,14 @@ func (c *SLAChecker) queryPrometheus(ctx context.Context, query string) (float64
 	}
 
 	return value, true, nil
+}
+
+func namespaceForSandbox(sandboxID string) string {
+	if strings.HasPrefix(sandboxID, "sandbox-") {
+		return sandboxID
+	}
+
+	return "sandbox-" + sandboxID
 }
 
 type OTelMetrics struct {

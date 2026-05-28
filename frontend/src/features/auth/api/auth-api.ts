@@ -30,6 +30,32 @@ export async function refreshTokens(
   return data
 }
 
+export async function loginWithPassword(
+  email: string,
+  password: string,
+): Promise<AuthResult | null> {
+  const { data, error } = await httpClient.post<AuthResult>('/auth/login/password', {
+    email,
+    password,
+  })
+  if (error) return null
+  return data
+}
+
+export async function register(
+  email: string,
+  password: string,
+  displayName: string,
+): Promise<AuthResult | null> {
+  const { data, error } = await httpClient.post<AuthResult>('/auth/register', {
+    email,
+    password,
+    displayName,
+  })
+  if (error) return null
+  return data
+}
+
 export async function logout(): Promise<void> {
   await httpClient.post('/auth/logout')
 }

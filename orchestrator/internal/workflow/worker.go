@@ -68,6 +68,7 @@ func NewWorker(config WorkerConfig) (*Worker, error) {
 	w.RegisterActivity(activities.WaitUntilReady)
 	w.RegisterActivity(activities.ApplyNetworkPolicies)
 	w.RegisterActivity(activities.InitializeSeedData)
+	w.RegisterActivity(activities.SetupShellPod)
 	w.RegisterActivity(activities.VerifyReady)
 	w.RegisterActivity(activities.DeleteVCluster)
 	w.RegisterActivity(activities.DeleteNamespace)

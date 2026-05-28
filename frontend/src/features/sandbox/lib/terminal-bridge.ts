@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import type { Terminal } from '@xterm/xterm'
 import { WsClient } from '@shared/api'
 import type { WsStatus } from '@shared/api'
+import { useAuthStore } from '@features/auth'
 import { useSandboxStore } from '../model/sandbox-store'
 import type { ConnectionStatus } from '../model/sandbox-store'
 
@@ -21,19 +22,24 @@ export function useSandboxTerminal(
   term: Terminal | null,
 ): void {
   const setTerminalStatus = useSandboxStore((s) => s.setTerminalStatus)
+  const accessToken = useAuthStore((s) => s.accessToken)
 
   useEffect(() => {
-    if (!sandboxId || !term) return
+    if (!sandboxId || !term || !accessToken) return
 
     const ws = new WsClient({
       url: `${WS_BASE}/ws/terminal/${sandboxId}`,
       heartbeatIntervalMs: 30_000,
       reconnectDelayMs: 1_000,
       maxReconnectAttempts: 10,
-      onStatusChange: (status) => setTerminalStatus(toConnectionStatus(status)),
+      onStatusChange: (status) => {
+        setTerminalStatus(toConnectionStatus(status))
+        if (status === 'connected') {
+          ws.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }))
+        }
+      },
     })
 
-    term.writeln('\x1b[1;36m  Connecting to sandbox terminal…\x1b[0m')
     ws.connect()
 
     const unsub = ws.subscribe((ev) => {
@@ -52,13 +58,11 @@ export function useSandboxTerminal(
       ws.send(JSON.stringify({ type: 'resize', cols, rows }))
     })
 
-    ws.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }))
-
     return () => {
       unsub()
       onData.dispose()
       onResize.dispose()
       ws.close()
     }
-  }, [sandboxId, term, setTerminalStatus])
+  }, [sandboxId, term, setTerminalStatus, accessToken])
 }

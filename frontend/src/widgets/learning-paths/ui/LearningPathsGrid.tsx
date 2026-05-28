@@ -1,5 +1,6 @@
 import { PathCard } from '@entities/path';
 import type { LearningPath } from '@entities/path';
+import { Filter } from 'lucide-react';
 
 export const LearningPathsGrid = () => {
   const paths: LearningPath[] = [
@@ -45,15 +46,28 @@ export const LearningPathsGrid = () => {
 
   return (
     <div className="flex-1 space-y-8">
+      {/* Section Header */}
+      <div>
+        <h2 className="text-3xl font-extrabold text-slate-900 mb-2">
+          Explore Learning Paths
+        </h2>
+        <p className="text-slate-600">
+          Choose from our curated collection of industry-focused pathways
+        </p>
+      </div>
+
       {/* Categories */}
-      <div className="flex items-center gap-4 overflow-x-auto pb-4 hide-scrollbar">
+      <div className="flex items-center gap-3 overflow-x-auto pb-2">
+        <div className="flex items-center gap-2 px-4 py-2 bg-white rounded-full shadow-[3px_3px_8px_rgba(79,70,229,0.08)]">
+          <Filter className="w-4 h-4 text-slate-400" />
+        </div>
         {categories.map((cat, i) => (
           <button
             key={cat}
-            className={`px-6 py-2.5 rounded-full font-label text-sm whitespace-nowrap transition-colors ${
-              i === 0 
-                ? 'bg-primary text-on-primary font-bold shadow-sm' 
-                : 'bg-surface-container-highest text-on-surface hover:bg-surface-dim font-medium'
+            className={`px-5 py-2.5 rounded-full font-bold text-sm whitespace-nowrap transition-all duration-200 border-2 ${
+              i === 0
+                ? 'bg-indigo-600 text-white border-indigo-600 shadow-[4px_4px_12px_rgba(79,70,229,0.3)]'
+                : 'bg-white text-slate-600 border-slate-100 hover:border-indigo-200 hover:text-indigo-600 shadow-[2px_2px_8px_rgba(79,70,229,0.06)]'
             }`}
           >
             {cat}

@@ -22,20 +22,28 @@ func NewStdinReader(stream pb.Orchestrator_ExecStreamServer) *StdinReader {
 }
 
 func (r *StdinReader) Read(p []byte) (int, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	if r.closed {
-		return 0, io.EOF
-	}
-
-	if len(r.buffer) == 0 {
-		r.mu.Unlock()
-		in, err := r.stream.Recv()
+	for {
 		r.mu.Lock()
 
+		if r.closed {
+			r.mu.Unlock()
+			return 0, io.EOF
+		}
+
+		if len(r.buffer) > 0 {
+			n := copy(p, r.buffer)
+			r.buffer = r.buffer[n:]
+			r.mu.Unlock()
+			return n, nil
+		}
+
+		r.mu.Unlock()
+
+		in, err := r.stream.Recv()
 		if err != nil {
+			r.mu.Lock()
 			r.closed = true
+			r.mu.Unlock()
 			if err == io.EOF {
 				return 0, io.EOF
 			}
@@ -43,17 +51,12 @@ func (r *StdinReader) Read(p []byte) (int, error) {
 		}
 
 		if len(in.Stdin) > 0 {
+			r.mu.Lock()
 			r.buffer = append(r.buffer, in.Stdin...)
+			r.mu.Unlock()
 		}
+		// If no stdin data (e.g. resize message), loop and wait for next message
 	}
-
-	if len(r.buffer) == 0 {
-		return 0, nil
-	}
-
-	n := copy(p, r.buffer)
-	r.buffer = r.buffer[n:]
-	return n, nil
 }
 
 func (r *StdinReader) Close() error {

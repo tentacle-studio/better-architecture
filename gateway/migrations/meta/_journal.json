@@ -1,0 +1,41 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1700000000000,
+      "tag": "001_initial_schema",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1700000001000,
+      "tag": "002_add_password_auth",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1700000002000,
+      "tag": "003_seed_system_design_labs",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1700000003000,
+      "tag": "004_add_labs_tags_status",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1700000004000,
+      "tag": "005_add_seed_level_and_manifests",
+      "breakpoints": true
+    }
+  ]
+}

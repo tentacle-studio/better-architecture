@@ -11,8 +11,13 @@ import (
 	"github.com/tentacle-studio/better-architecture/orchestrator/internal/k8s"
 	"github.com/tentacle-studio/better-architecture/orchestrator/internal/sandbox"
 	"github.com/tentacle-studio/better-architecture/orchestrator/internal/vcluster"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 	"go.temporal.io/sdk/activity"
+	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
 type Activities struct {
@@ -40,12 +45,15 @@ func (a *Activities) WithJudgeEngine(engine *judge.Engine) *Activities {
 
 func (a *Activities) CreateNamespace(ctx context.Context, userID, quizID string) (string, error) {
 	sandboxID := uuid.New().String()[:8]
-	namespace := fmt.Sprintf("sandbox-%s-%s-%s", userID, quizID, sandboxID)
+
+	userShort := userID[:8]
+	quizShort := quizID[:8]
+	namespace := fmt.Sprintf("sandbox-%s", sandboxID)
 
 	labels := map[string]string{
 		"app":        "vcluster",
-		"user-id":    userID,
-		"quiz-id":    quizID,
+		"user-id":    userShort,
+		"quiz-id":    quizShort,
 		"sandbox-id": sandboxID,
 	}
 
@@ -58,8 +66,16 @@ func (a *Activities) CreateNamespace(ctx context.Context, userID, quizID string)
 }
 
 func (a *Activities) DeployVCluster(ctx context.Context, namespace string) (string, error) {
+	spanCtx, span := otel.Tracer("orchestrator").Start(ctx, "orchestrator.vcluster.create")
+	defer span.End()
+
 	sandboxID := namespace[len(namespace)-8:]
 	vclusterName := fmt.Sprintf("vc-%s", sandboxID)
+	span.SetAttributes(
+		attribute.String("sandbox.id", sandboxID),
+		attribute.String("k8s.namespace", namespace),
+		attribute.String("vcluster.name", vclusterName),
+	)
 
 	config := vcluster.VClusterConfig{
 		Name:              vclusterName,
@@ -70,8 +86,9 @@ func (a *Activities) DeployVCluster(ctx context.Context, namespace string) (stri
 	}
 
 	provisioner := vcluster.NewProvisioner(a.k8sClient, config)
-	_, err := provisioner.Create(ctx)
+	_, err := provisioner.Create(spanCtx)
 	if err != nil {
+		span.RecordError(err)
 		return "", fmt.Errorf("deploy vcluster %s: %w", vclusterName, err)
 	}
 
@@ -124,7 +141,7 @@ func (a *Activities) ApplyNetworkPolicies(ctx context.Context, namespace string)
 	return nil
 }
 
-func (a *Activities) InitializeSeedData(ctx context.Context, vclusterEndpoint, seedManifest string) error {
+func (a *Activities) InitializeSeedData(ctx context.Context, namespace, vclusterName, seedManifest string) error {
 	if seedManifest == "" {
 		activity.GetLogger(ctx).Info("No seed manifest provided, skipping initialization")
 		return nil
@@ -135,17 +152,139 @@ func (a *Activities) InitializeSeedData(ctx context.Context, vclusterEndpoint, s
 		return fmt.Errorf("decode seed manifest: %w", err)
 	}
 
-	seeder, err := sandbox.NewSeeder(a.k8sClient.GetConfig())
+	// Get vCluster kubeconfig to connect to the vCluster
+	vclusterKubeconfig, err := a.k8sClient.CreateVClusterKubeconfig(ctx, namespace, vclusterName)
+	if err != nil {
+		return fmt.Errorf("create vcluster kubeconfig: %w", err)
+	}
+
+	// Create a client for the vCluster using the vCluster kubeconfig
+	vclusterClient, err := k8s.NewClientFromKubeconfig(vclusterKubeconfig)
+	if err != nil {
+		return fmt.Errorf("create vcluster client: %w", err)
+	}
+
+	// Create seeder with vCluster client config
+	seeder, err := sandbox.NewSeeder(vclusterClient.GetConfig())
 	if err != nil {
 		return fmt.Errorf("create seeder: %w", err)
 	}
 
-	namespace := "default"
-	if err := seeder.ApplyManifest(ctx, namespace, string(manifestBytes)); err != nil {
+	// Apply to default namespace inside vCluster (resources will be isolated inside vCluster)
+	vclusterNamespace := "default"
+	if err := seeder.ApplyManifest(ctx, vclusterNamespace, string(manifestBytes)); err != nil {
 		return fmt.Errorf("apply seed manifest: %w", err)
 	}
 
-	activity.GetLogger(ctx).Info("Seed data initialized", "endpoint", vclusterEndpoint)
+	activity.GetLogger(ctx).Info("Seed data initialized in vCluster", "namespace", namespace, "vcluster", vclusterName)
+	return nil
+}
+
+func (a *Activities) SetupShellPod(ctx context.Context, namespace, vclusterName string) error {
+	// Get vCluster kubeconfig to connect to the vCluster
+	vclusterKubeconfig, err := a.k8sClient.CreateVClusterKubeconfig(ctx, namespace, vclusterName)
+	if err != nil {
+		return fmt.Errorf("create vcluster kubeconfig: %w", err)
+	}
+
+	// Create a client for the vCluster
+	vclusterClient, err := k8s.NewClientFromKubeconfig(vclusterKubeconfig)
+	if err != nil {
+		return fmt.Errorf("create vcluster client: %w", err)
+	}
+
+	// Setup RBAC for shell pod
+	if err := a.setupShellRBAC(ctx, vclusterClient); err != nil {
+		return fmt.Errorf("setup shell RBAC: %w", err)
+	}
+
+	// Create shell pod inside the vCluster
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "shell",
+			Namespace: "default",
+			Labels:    map[string]string{"app": "workload"},
+		},
+		Spec: corev1.PodSpec{
+			ServiceAccountName: "lab-user",
+			Containers: []corev1.Container{{
+				Name:  "shell",
+				Image: "lab-shell:latest",
+				Ports: []corev1.ContainerPort{{
+					ContainerPort: 8080,
+					Protocol:      corev1.ProtocolTCP,
+				}},
+				ImagePullPolicy: corev1.PullIfNotPresent,
+				ReadinessProbe: &corev1.Probe{
+					ProbeHandler: corev1.ProbeHandler{
+						TCPSocket: &corev1.TCPSocketAction{
+							Port: intstr.FromInt(8080),
+						},
+					},
+					InitialDelaySeconds: 5,
+					PeriodSeconds:       3,
+					TimeoutSeconds:      2,
+					SuccessThreshold:    1,
+					FailureThreshold:    3,
+				},
+			}},
+		},
+	}
+	if _, err := vclusterClient.Clientset.CoreV1().Pods("default").Create(ctx, pod, metav1.CreateOptions{}); err != nil {
+		return fmt.Errorf("create shell pod: %w", err)
+	}
+
+	activity.GetLogger(ctx).Info("Shell pod created in vCluster", "namespace", namespace, "vcluster", vclusterName)
+	return nil
+}
+
+func (a *Activities) setupShellRBAC(ctx context.Context, vclusterClient *k8s.Client) error {
+	// Create ServiceAccount for shell pod
+	sa := &corev1.ServiceAccount{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "lab-user",
+			Namespace: "default",
+		},
+	}
+	if _, err := vclusterClient.Clientset.CoreV1().ServiceAccounts("default").Create(ctx, sa, metav1.CreateOptions{}); err != nil {
+		return fmt.Errorf("create service account: %w", err)
+	}
+
+	// Create ClusterRole with full permissions for educational purposes
+	clusterRole := &rbacv1.ClusterRole{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "lab-user-role",
+		},
+		Rules: []rbacv1.PolicyRule{{
+			APIGroups: []string{"*"},
+			Resources: []string{"*"},
+			Verbs:     []string{"*"},
+		}},
+	}
+	if _, err := vclusterClient.Clientset.RbacV1().ClusterRoles().Create(ctx, clusterRole, metav1.CreateOptions{}); err != nil {
+		return fmt.Errorf("create cluster role: %w", err)
+	}
+
+	// Bind ClusterRole to ServiceAccount
+	clusterRoleBinding := &rbacv1.ClusterRoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "lab-user-binding",
+		},
+		Subjects: []rbacv1.Subject{{
+			Kind:      "ServiceAccount",
+			Name:      "lab-user",
+			Namespace: "default",
+		}},
+		RoleRef: rbacv1.RoleRef{
+			APIGroup: "rbac.authorization.k8s.io",
+			Kind:     "ClusterRole",
+			Name:     "lab-user-role",
+		},
+	}
+	if _, err := vclusterClient.Clientset.RbacV1().ClusterRoleBindings().Create(ctx, clusterRoleBinding, metav1.CreateOptions{}); err != nil {
+		return fmt.Errorf("create cluster role binding: %w", err)
+	}
+
 	return nil
 }
 

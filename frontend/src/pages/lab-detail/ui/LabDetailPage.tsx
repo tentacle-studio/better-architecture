@@ -1,6 +1,6 @@
 import { useState, useEffect, type ReactNode } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { Clock, ChevronRight, Tag, Building2, PlayCircle } from 'lucide-react'
+import { Clock, ChevronRight, Tag, PlayCircle } from 'lucide-react'
 import { SideNavbar } from '@widgets/side-navbar'
 import { Header } from '@widgets/header'
 import { getLab, startLab } from '@entities/lab'
@@ -105,7 +105,7 @@ export function LabDetailPage() {
                 </Badge>
                 <div className="flex items-center gap-1.5 px-2.5 py-0.5 bg-gray-100 text-gray-600 rounded-full text-[11px] font-semibold">
                   <Clock className="h-3 w-3" />
-                  {lab.estimatedMinutes} min
+                  {lab.estimatedMin} min
                 </div>
                 {lab.tags.map((tag) => (
                   <div
@@ -114,15 +114,6 @@ export function LabDetailPage() {
                   >
                     <Tag className="h-3 w-3" />
                     {tag}
-                  </div>
-                ))}
-                {lab.companies.map((co) => (
-                  <div
-                    key={co}
-                    className="flex items-center gap-1.5 px-2.5 py-0.5 bg-gray-100 text-gray-600 rounded-full text-[11px] font-semibold"
-                  >
-                    <Building2 className="h-3 w-3" />
-                    {co}
                   </div>
                 ))}
               </div>

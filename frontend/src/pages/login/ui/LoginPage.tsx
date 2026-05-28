@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { Button } from '@shared/ui/button'
 import { useAuthStore } from '@features/auth'
 import { login } from '@features/auth'
+import { LoginForm } from '@features/auth/ui/LoginForm'
 import { httpClient } from '@shared/api'
 
 const GOOGLE_CLIENT_ID = (import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined) ?? ''
@@ -64,6 +65,17 @@ export function LoginPage() {
             Welcome back
           </h1>
           <p className="mt-2 text-sm text-gray-500">Sign in to continue learning</p>
+        </div>
+
+        <LoginForm />
+
+        <div className="relative my-6">
+          <div className="absolute inset-0 flex items-center">
+            <div className="w-full border-t border-gray-200" />
+          </div>
+          <div className="relative flex justify-center text-sm">
+            <span className="bg-white px-4 text-gray-500">Or continue with</span>
+          </div>
         </div>
 
         <div className="space-y-3">

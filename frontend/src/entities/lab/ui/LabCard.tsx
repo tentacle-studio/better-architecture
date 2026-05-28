@@ -49,7 +49,7 @@ export function LabCard({ lab, onClick }: Props) {
         </Badge>
         <div className="flex items-center gap-1 text-[11px] text-gray-400">
           <Clock className="h-3 w-3" />
-          {lab.estimatedMinutes} min
+          {lab.estimatedMin} min
         </div>
         {lab.status === 'completed' && (
           <span className="ml-auto text-[11px] font-semibold text-emerald-600">✓ Done</span>

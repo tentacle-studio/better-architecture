@@ -54,14 +54,14 @@ func SetupLabEnvironment(ctx workflow.Context, input SetupLabInput) (*SetupLabOu
 
 	var vclusterName string
 	activityOptions = workflow.ActivityOptions{
-		StartToCloseTimeout: 120 * time.Second,
+		StartToCloseTimeout: 7 * time.Minute,  // Increased to accommodate 5min Helm timeout + buffer
 		RetryPolicy: &temporal.RetryPolicy{
 			InitialInterval:    10 * time.Second,
 			BackoffCoefficient: 2.0,
 			MaximumInterval:    60 * time.Second,
 			MaximumAttempts:    2,
 		},
-		HeartbeatTimeout: 15 * time.Second,
+		// No HeartbeatTimeout - Helm operations don't send heartbeats
 	}
 	ctx2 := workflow.WithActivityOptions(ctx, activityOptions)
 
@@ -118,11 +118,29 @@ func SetupLabEnvironment(ctx workflow.Context, input SetupLabInput) (*SetupLabOu
 	}
 	ctx5 := workflow.WithActivityOptions(ctx, activityOptions)
 
-	err = workflow.ExecuteActivity(ctx5, "InitializeSeedData", vclusterEndpoint, input.SeedManifest).Get(ctx5, nil)
+	err = workflow.ExecuteActivity(ctx5, "InitializeSeedData", namespace, vclusterName, input.SeedManifest).Get(ctx5, nil)
 	if err != nil {
 		logger.Error("Failed to initialize seed data", "error", err)
 		_ = workflow.ExecuteChildWorkflow(ctx, CompensationWorkflow, compensationInput).Get(ctx, nil)
 		return nil, fmt.Errorf("initialize seed data: %w", err)
+	}
+
+	activityOptions = workflow.ActivityOptions{
+		StartToCloseTimeout: 45 * time.Second,
+		RetryPolicy: &temporal.RetryPolicy{
+			InitialInterval:    5 * time.Second,
+			BackoffCoefficient: 2.0,
+			MaximumInterval:    30 * time.Second,
+			MaximumAttempts:    3,
+		},
+	}
+	ctx6 := workflow.WithActivityOptions(ctx, activityOptions)
+
+	err = workflow.ExecuteActivity(ctx6, "SetupShellPod", namespace, vclusterName).Get(ctx6, nil)
+	if err != nil {
+		logger.Error("Failed to setup shell pod", "error", err)
+		_ = workflow.ExecuteChildWorkflow(ctx, CompensationWorkflow, compensationInput).Get(ctx, nil)
+		return nil, fmt.Errorf("setup shell pod: %w", err)
 	}
 
 	var sandboxInfo *SandboxInfo
@@ -135,9 +153,9 @@ func SetupLabEnvironment(ctx workflow.Context, input SetupLabInput) (*SetupLabOu
 			MaximumAttempts:    3,
 		},
 	}
-	ctx6 := workflow.WithActivityOptions(ctx, activityOptions)
+	ctx7 := workflow.WithActivityOptions(ctx, activityOptions)
 
-	err = workflow.ExecuteActivity(ctx6, "VerifyReady", vclusterEndpoint, namespace, vclusterName).Get(ctx6, &sandboxInfo)
+	err = workflow.ExecuteActivity(ctx7, "VerifyReady", vclusterEndpoint, namespace, vclusterName).Get(ctx7, &sandboxInfo)
 	if err != nil {
 		logger.Error("Failed to verify sandbox ready", "error", err)
 		_ = workflow.ExecuteChildWorkflow(ctx, CompensationWorkflow, compensationInput).Get(ctx, nil)

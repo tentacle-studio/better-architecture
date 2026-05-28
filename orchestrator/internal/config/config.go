@@ -16,6 +16,8 @@ type Config struct {
 	MaxSandboxesPerUser  int
 	NATSUrl              string
 	OTelEndpoint         string
+	PrometheusURL        string
+	MetricsPort          string
 	TesterPodCIDR        string
 	HealthCheckInterval  time.Duration
 	HealthCheckTimeout   time.Duration
@@ -35,6 +37,8 @@ func Load() *Config {
 		MaxSandboxesPerUser:  getIntEnv("MAX_SANDBOXES_PER_USER", 5),
 		NATSUrl:              getEnv("NATS_URL", "nats://localhost:4222"),
 		OTelEndpoint:         getEnv("OTEL_ENDPOINT", "localhost:4317"),
+		PrometheusURL:        getEnv("PROMETHEUS_URL", ""),
+		MetricsPort:          getEnv("METRICS_PORT", "9090"),
 		TesterPodCIDR:        getEnv("TESTER_POD_CIDR", "10.244.0.0/16"),
 		HealthCheckInterval:  getDurationEnv("HEALTH_CHECK_INTERVAL", 2*time.Second),
 		HealthCheckTimeout:   getDurationEnv("HEALTH_CHECK_TIMEOUT", 90*time.Second),

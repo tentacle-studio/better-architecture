@@ -1,38 +1,56 @@
-import { trace, context, SpanStatusCode } from '@opentelemetry/api';
+import { SpanStatusCode, type Span } from '@opentelemetry/api';
 import type { FastifyRequest, FastifyReply } from 'fastify';
+import { recordHttpRequestMetrics, startSpan } from '../observability/telemetry.js';
 
-const tracer = trace.getTracer('gateway');
+const requestSpanKey = Symbol('gateway-request-span');
+const requestStartedAtKey = Symbol('gateway-request-started-at');
+
+type TracedRequest = FastifyRequest & {
+  [requestSpanKey]?: Span;
+  [requestStartedAtKey]?: bigint;
+};
 
 export function createTracingMiddleware() {
+  return async (request: FastifyRequest) => {
+    const tracedRequest = request as TracedRequest;
+    tracedRequest[requestStartedAtKey] = process.hrtime.bigint();
+    tracedRequest[requestSpanKey] = startSpan('gateway.http.request', {
+      'http.method': request.method,
+      'http.target': request.url,
+    });
+  };
+}
+
+export function createTracingResponseHook() {
   return async (request: FastifyRequest, reply: FastifyReply) => {
-    const span = tracer.startSpan(`${request.method} ${request.url}`, {
-      attributes: {
-        'http.method': request.method,
-        'http.url': request.url,
-        'http.route': request.routerPath,
-        'user.id': request.user?.sub,
-      },
+    const tracedRequest = request as TracedRequest;
+    const span = tracedRequest[requestSpanKey];
+    if (!span) return;
+
+    const route = request.routeOptions.url || 'unknown';
+    const startedAt = tracedRequest[requestStartedAtKey];
+    if (startedAt) {
+      const durationSeconds = Number(process.hrtime.bigint() - startedAt) / 1_000_000_000;
+      recordHttpRequestMetrics(request.method, route, reply.statusCode, durationSeconds);
+    }
+
+    span.setAttributes({
+      'http.route': route,
+      'http.status_code': reply.statusCode,
+      'user.id': request.user?.sub ?? 'anonymous',
     });
 
-    const ctx = trace.setSpan(context.active(), span);
-
-    reply.raw.on('finish', () => {
-      span.setAttributes({
-        'http.status_code': reply.statusCode,
+    if (reply.statusCode >= 400) {
+      span.setStatus({
+        code: SpanStatusCode.ERROR,
+        message: `HTTP ${reply.statusCode}`,
       });
+    } else {
+      span.setStatus({ code: SpanStatusCode.OK });
+    }
 
-      if (reply.statusCode >= 400) {
-        span.setStatus({
-          code: SpanStatusCode.ERROR,
-          message: `HTTP ${reply.statusCode}`,
-        });
-      } else {
-        span.setStatus({ code: SpanStatusCode.OK });
-      }
-
-      span.end();
-    });
-
-    await context.with(ctx, async () => {});
+    span.end();
+    delete tracedRequest[requestSpanKey];
+    delete tracedRequest[requestStartedAtKey];
   };
 }

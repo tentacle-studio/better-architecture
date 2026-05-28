@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -18,6 +19,7 @@ import (
 	"github.com/tentacle-studio/better-architecture/orchestrator/internal/k8s"
 	"github.com/tentacle-studio/better-architecture/orchestrator/internal/sandbox"
 	"github.com/tentacle-studio/better-architecture/orchestrator/internal/telemetry"
+	"go.temporal.io/sdk/client"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
 )
@@ -49,11 +51,33 @@ func main() {
 		log.Println("OpenTelemetry metrics initialized")
 	}
 
+	metricsServer := &http.Server{
+		Addr:              fmt.Sprintf(":%s", cfg.MetricsPort),
+		Handler:           telemetry.MetricsHandler(),
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+	go func() {
+		log.Printf("Orchestrator metrics server listening on :%s", cfg.MetricsPort)
+		if err := metricsServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Printf("Metrics server error: %v", err)
+		}
+	}()
+
 	k8sClient, err := k8s.NewClient(cfg.KubeConfigPath)
 	if err != nil {
 		log.Fatalf("Failed to create k8s client: %v", err)
 	}
 	log.Println("Kubernetes client initialized")
+
+	temporalClient, err := client.Dial(client.Options{
+		HostPort:  cfg.TemporalHost,
+		Namespace: cfg.TemporalNamespace,
+	})
+	if err != nil {
+		log.Fatalf("Failed to connect to Temporal at %s: %v", cfg.TemporalHost, err)
+	}
+	defer temporalClient.Close()
+	log.Printf("Temporal client connected to %s", cfg.TemporalHost)
 
 	var eventPublisher *events.Publisher
 	if cfg.NATSUrl != "" {
@@ -75,10 +99,10 @@ func main() {
 	)
 	log.Println("Sandbox manager initialized")
 
-	judgeEngine := judge.NewEngine(k8sClient)
+	judgeEngine := judge.NewEngine(k8sClient, judge.WithPrometheusURL(cfg.PrometheusURL))
 	log.Println("Judge engine initialized")
 
-	grpcServer := grpcserver.NewServer(sandboxManager, judgeEngine)
+	grpcServer := grpcserver.NewServer(sandboxManager, judgeEngine, temporalClient, cfg.TemporalTaskQueue, cfg.SandboxTTL)
 	log.Println("gRPC server initialized")
 
 	lis, err := net.Listen("tcp", fmt.Sprintf(":%s", cfg.GRPCPort))
@@ -96,6 +120,11 @@ func main() {
 	go func() {
 		<-sigChan
 		log.Println("Received shutdown signal, gracefully stopping...")
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer shutdownCancel()
+		if err := metricsServer.Shutdown(shutdownCtx); err != nil {
+			log.Printf("Failed to shutdown metrics server: %v", err)
+		}
 		s.GracefulStop()
 		cancel()
 	}()

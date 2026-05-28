@@ -13,6 +13,10 @@ spec:
     metadata:
       labels:
         {{- include "gateway.selectorLabels" . | nindent 8 }}
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: "/metrics"
+        prometheus.io/port: {{ .Values.service.port | quote }}
     spec:
       serviceAccountName: {{ include "gateway.fullname" . }}
       containers:

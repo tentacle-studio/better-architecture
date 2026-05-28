@@ -3,9 +3,10 @@ import { relations } from 'drizzle-orm';
 
 export const users = pgTable('users', {
   id: uuid('id').primaryKey().defaultRandom(),
-  email: text('email').notNull().unique(),
+  email: text('email').unique(),
   displayName: text('display_name').notNull(),
   avatarUrl: text('avatar_url'),
+  passwordHash: text('password_hash'),
   role: text('role').notNull().default('student'),
   xp: integer('xp').notNull().default(0),
   level: integer('level').notNull().default(1),
@@ -43,7 +44,10 @@ export const labs = pgTable('labs', {
   difficulty: text('difficulty').notNull(),
   estimatedMin: integer('estimated_min').notNull(),
   seedManifest: text('seed_manifest').notNull(),
+  seedLevel: text('seed_level').notNull().default('code-only'),
   sortOrder: integer('sort_order').notNull(),
+  tags: text('tags').array().notNull().default([]),
+  status: text('status').notNull().default('available'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 

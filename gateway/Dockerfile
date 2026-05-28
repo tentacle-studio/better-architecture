@@ -1,26 +1,30 @@
 FROM node:22-alpine AS builder
 
-RUN corepack enable && corepack prepare pnpm@latest --activate
+# Install build dependencies for native modules
+RUN apk add --no-cache python3 make g++
+
+RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
 
 WORKDIR /app
 
-COPY package.json pnpm-lock.yaml ./
-RUN pnpm install --frozen-lockfile
+COPY package.json pnpm-lock.yaml .npmrc ./
+# Install without frozen lockfile to allow build scripts
+RUN pnpm install --no-frozen-lockfile
 
 COPY tsconfig.json ./
 COPY src ./src
 
 RUN pnpm run build
 
-FROM node:22-alpine
+# Prune dev dependencies
+RUN pnpm prune --prod
 
-RUN corepack enable && corepack prepare pnpm@latest --activate
+FROM node:22-alpine
 
 WORKDIR /app
 
 COPY package.json pnpm-lock.yaml ./
-RUN pnpm install --frozen-lockfile --prod
-
+COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/dist ./dist
 COPY proto ./proto
 

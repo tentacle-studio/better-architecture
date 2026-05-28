@@ -8,34 +8,39 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 interface CreateSandboxRequest {
-  userId: string;
-  labId: string;
-  templateId: string;
+  user_id: string;
+  quiz_id: string;
+  seed_manifest: string;
 }
 
 interface CreateSandboxResponse {
-  sandboxId: string;
-  namespace: string;
-  status: string;
+  sandbox_id: string;
+  vcluster_endpoint: string;
+  kubeconfig: string;
+  terminal_pod_ip: string;
 }
 
 interface DestroySandboxRequest {
-  sandboxId: string;
+  sandbox_id: string;
 }
 
 interface ValidateQuizRequest {
-  sandboxId: string;
-  labId: string;
-  answers: Record<string, any>;
+  sandbox_id: string;
+  quiz_id: string;
+  checks: Array<{
+    type: string;
+    spec_json: string;
+  }>;
 }
 
 interface ValidateQuizResponse {
   passed: boolean;
   score: number;
   results: Array<{
-    questionId: string;
-    correct: boolean;
-    feedback: string;
+    check_name: string;
+    passed: boolean;
+    message: string;
+    points: number;
   }>;
 }
 
@@ -56,7 +61,7 @@ export class OrchestratorClient {
     const protoDescriptor = grpc.loadPackageDefinition(packageDefinition) as any;
     const orchestratorProto = protoDescriptor.orchestrator;
 
-    this.client = new orchestratorProto.OrchestratorService(
+    this.client = new orchestratorProto.Orchestrator(
       config.orchestratorGrpcUrl,
       grpc.credentials.createInsecure()
     );
@@ -103,7 +108,7 @@ export class OrchestratorClient {
   }
 
   watchResources(sandboxId: string) {
-    const stream = this.client.WatchResources({ sandboxId });
+    const stream = this.client.WatchResources({ sandbox_id: sandboxId });
     return stream;
   }
 

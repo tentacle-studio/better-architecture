@@ -42,7 +42,12 @@ export async function completeDailyTask(db: DbClient, taskId: string) {
       isCompleted: true,
       completedAt: new Date(),
     })
-    .where(eq(dailyTasks.id, taskId))
+    .where(
+      and(
+        eq(dailyTasks.id, taskId),
+        eq(dailyTasks.isCompleted, false),
+      )
+    )
     .returning();
   
   return result[0];

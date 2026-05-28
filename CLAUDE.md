@@ -1,5 +1,97 @@
-## Project Overview
+## Project Context
 This project is an educational application teaching system design, devops, and cloud architecture concepts through real infrastructure simulation. The lab follows LeetCode-style challenges and isolated environments for each challenge.
+
+### Tech Stack
+- **Orchestrator**: Go 1.21+, gRPC, Kubernetes client-go, Temporal workflows
+- **Gateway**: Node.js 22+, TypeScript 5.x, Fastify 4.x, Drizzle ORM, PostgreSQL, Redis, NATS
+- **Frontend**: React 19+, TypeScript 6.x, Vite 8.x, Tailwind CSS 4, Zustand, React Router DOM 7
+- **Infrastructure**: Docker, Kubernetes, Helm, Vault, Temporal, NATS, PostgreSQL, Redis
+
+## Core Principles
+
+1. **READ FIRST**: Always read at least 1500 lines to understand context fully
+2. **DELETE MORE THAN YOU ADD**: Complexity compounds into disasters
+3. **FOLLOW EXISTING PATTERNS**: Don't invent new approaches
+4. **BUILD AND TEST**: Run your build and test commands after changes
+5. **COMMIT FREQUENTLY**: Every 5-10 minutes for meaningful progress
+
+## File Structure Reference
+```
+./
+├── Makefile                  # Root build orchestrator
+├── docker-compose.yml        # Local development services
+├── CLAUDE.md                 # Claude's rules
+├── AGENTS.md                 # Agent's rules
+│
+├── orchestrator/            # Go gRPC server, Kubernetes orchestration, Temporal workers
+│   ├── internal/
+│   │   ├── grpc/           # gRPC server and protobuf handlers
+│   │   ├── k8s/            # Kubernetes client operations
+│   │   └── sandbox/        # Sandbox lifecycle management
+│   ├── manifest/           # Kubernetes manifests and Helm charts
+│   ├── proto/              # Protocol buffer definitions
+│   └── main.go
+│
+├── gateway/                 # Fastify API Gateway (TypeScript)
+│   ├── src/
+│   │   ├── routes/         # HTTP route handlers
+│   │   ├── services/       # Business logic services
+│   │   ├── middleware/     # Auth, rate limiting, tracing
+│   │   ├── db/             # Database schema and queries
+│   │   └── ws/             # WebSocket handlers
+│   ├── migrations/         # SQL migrations
+│   ├── proto/              # gRPC protobuf definitions
+│   └── package.json
+│
+├── frontend/                # React/Vite SPA (Feature-Sliced Design)
+│   ├── src/
+│   │   ├── app/            # App setup, routing, providers
+│   │   ├── pages/          # Route-level components
+│   │   ├── widgets/        # Complex UI blocks
+│   │   ├── features/       # User interactions & business logic
+│   │   ├── entities/       # Domain models (Lab, Task, User)
+│   │   └── shared/         # Utilities, UI kit, API clients
+│   └── package.json
+│
+├── docs/                    # Documentation
+│   ├── labs/               # Lab tutorials and guides
+│   └── orchestrator/       # Orchestrator documentation
+│
+└── scripts/                 # Build and deployment scripts
+```
+
+## Common Commands (All Personas)
+
+```bash
+# Build all services
+make build
+
+# Install dependencies
+make install
+
+# Start local development stack (Vault, Postgres, Redis, NATS)
+make vault-up
+make vault-init
+
+# Run services in development mode
+make orchestrator-run      # Go orchestrator
+make gateway-dev           # Fastify dev server
+make frontend-dev          # Vite dev server
+
+# Run tests
+make orchestrator-test     # Go tests
+
+# Build Docker images
+make docker-build
+
+# Deploy to Kubernetes (Helm)
+make orchestrator-helm-install
+make gateway-helm-install
+make frontend-helm-install
+
+# Clean build artifacts
+make clean
+```
 
 ## Behavioral Guidelines
 **Tradeoff:** These guidelines bias toward caution over speed. For trivial tasks, use judgment.

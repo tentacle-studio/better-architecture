@@ -25,8 +25,24 @@ export async function findLabs(
     .select({ count: count() })
     .from(labs);
 
+  // Transform snake_case to camelCase for frontend
+  const transformedLabs = results.map(lab => ({
+    id: lab.id,
+    moduleId: lab.moduleId,
+    title: lab.title,
+    description: lab.description,
+    difficulty: lab.difficulty,
+    estimatedMin: lab.estimatedMin,
+    seedManifest: lab.seedManifest, // Keep as base64
+    seedLevel: lab.seedLevel,
+    sortOrder: lab.sortOrder,
+    tags: lab.tags,
+    status: lab.status,
+    createdAt: lab.createdAt.toISOString(),
+  }));
+
   return {
-    labs: results,
+    labs: transformedLabs,
     pagination: {
       page,
       limit,
@@ -42,8 +58,26 @@ export async function findLabById(db: DbClient, labId: string) {
     .from(labs)
     .where(eq(labs.id, labId))
     .limit(1);
-  
-  return result[0] || null;
+
+  const lab = result[0];
+  if (!lab) return null;
+
+  // Keep seed_manifest as base64 for orchestrator compatibility
+  // Transform snake_case to camelCase for frontend
+  return {
+    id: lab.id,
+    moduleId: lab.moduleId,
+    title: lab.title,
+    description: lab.description,
+    difficulty: lab.difficulty,
+    estimatedMin: lab.estimatedMin,
+    seedManifest: lab.seedManifest, // Keep as base64
+    seedLevel: lab.seedLevel,
+    sortOrder: lab.sortOrder,
+    tags: lab.tags,
+    status: lab.status,
+    createdAt: lab.createdAt.toISOString(),
+  };
 }
 
 export async function findLabWithChecks(db: DbClient, labId: string) {

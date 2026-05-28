@@ -33,17 +33,7 @@ func (p *Provisioner) Create(ctx context.Context) (*VClusterStatus, error) {
 		Ready:     false,
 	}
 
-	labels := map[string]string{
-		"app":      "vcluster",
-		"vcluster": p.config.Name,
-	}
-
-	if err := p.k8sClient.CreateNamespace(ctx, p.config.Namespace, labels); err != nil {
-		status.State = StateFailed
-		status.Message = fmt.Sprintf("failed to create namespace: %v", err)
-		return status, err
-	}
-
+	// Namespace is assumed to already exist (created by workflow activity)
 	if err := p.deployVCluster(ctx); err != nil {
 		status.State = StateFailed
 		status.Message = fmt.Sprintf("failed to deploy vcluster: %v", err)
@@ -64,6 +54,19 @@ func (p *Provisioner) Create(ctx context.Context) (*VClusterStatus, error) {
 		return status, err
 	}
 	status.Endpoint = endpoint
+
+	// Apply security policies
+	if err := p.k8sClient.ApplyResourceQuota(ctx, p.config.Namespace); err != nil {
+		status.State = StateFailed
+		status.Message = fmt.Sprintf("failed to apply resource quota: %v", err)
+		return status, err
+	}
+
+	if err := p.k8sClient.ApplyLimitRange(ctx, p.config.Namespace); err != nil {
+		status.State = StateFailed
+		status.Message = fmt.Sprintf("failed to apply limit range: %v", err)
+		return status, err
+	}
 
 	if err := p.k8sClient.ApplyNetworkPolicy(ctx, p.config.Namespace, p.config.NetworkPolicyCIDR); err != nil {
 		status.State = StateFailed
@@ -111,19 +114,44 @@ func (p *Provisioner) deployVCluster(ctx context.Context) error {
 		return fmt.Errorf("failed to get helm action config: %w", err)
 	}
 
+	settings := cli.New()
+	chartName := "vcluster"
+	chartRef := chartName
+	values := p.buildVClusterValues()
+
+	// Check if release already exists
+	status := action.NewStatus(actionConfig)
+	existingRelease, statusErr := status.Run(p.config.Name)
+	releaseExists := statusErr == nil
+
+	// If release exists in failed/pending state, uninstall it first
+	if releaseExists && existingRelease.Info.Status.String() != "deployed" {
+		fmt.Printf("Found release %s in state %s, uninstalling before reinstall...\n",
+			p.config.Name, existingRelease.Info.Status.String())
+		uninstall := action.NewUninstall(actionConfig)
+		if _, err := uninstall.Run(p.config.Name); err != nil {
+			fmt.Printf("Warning: failed to uninstall previous release: %v\n", err)
+		}
+		releaseExists = false
+	}
+
+	// If already deployed, check if it's healthy and return
+	if releaseExists && existingRelease.Info.Status.String() == "deployed" {
+		fmt.Printf("vCluster %s already deployed in namespace %s\n",
+			p.config.Name, p.config.Namespace)
+		return nil
+	}
+
+	// Use Install action for new releases
 	install := action.NewInstall(actionConfig)
 	install.Namespace = p.config.Namespace
 	install.ReleaseName = p.config.Name
-	install.CreateNamespace = false
 	install.Wait = true
 	install.Timeout = 5 * time.Minute
 	install.RepoURL = p.config.ChartRepo
 	install.Version = p.config.ChartVersion
+	install.Atomic = true  // Rollback on failure
 
-	chartName := "vcluster"
-	chartRef := chartName
-
-	settings := cli.New()
 	chartPath, err := install.ChartPathOptions.LocateChart(chartRef, settings)
 	if err != nil {
 		return fmt.Errorf("failed to locate chart %s: %w", chartRef, err)
@@ -133,8 +161,6 @@ func (p *Provisioner) deployVCluster(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to load chart from %s: %w", chartPath, err)
 	}
-
-	values := p.buildVClusterValues()
 
 	release, err := install.RunWithContext(ctx, chart, values)
 	if err != nil {

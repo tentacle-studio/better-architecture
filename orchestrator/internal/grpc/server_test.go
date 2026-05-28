@@ -83,15 +83,12 @@ func TestServer_ExtractStatus(t *testing.T) {
 	}
 }
 
-func TestServer_NewServer(t *testing.T) {
-	server := NewServer(nil, nil)
-	if server == nil {
-		t.Error("NewServer() returned nil")
-	}
-	if server.sandboxManager != nil {
-		t.Error("Expected nil sandboxManager")
-	}
-	if server.judgeEngine != nil {
-		t.Error("Expected nil judgeEngine")
-	}
+func TestServer_NewServer_RequiresTemporalClient(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Error("expected panic when temporal client is nil")
+		}
+	}()
+
+	_ = NewServer(nil, nil, nil, "", 0)
 }

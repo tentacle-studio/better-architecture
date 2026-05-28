@@ -16,11 +16,14 @@ const configSchema = z.object({
   jwtAccessExpiry: z.string().default('15m'),
   jwtRefreshExpiry: z.string().default('7d'),
 
-  oidcIssuer: z.string().url(),
-  oidcAudience: z.string(),
+  oidcIssuer: z.string().url().default('http://localhost:8200'),
+  oidcAudience: z.string().default('gateway-dev'),
+
+  corsOrigin: z.string().default('http://localhost:5173'),
 
   otelExporterEndpoint: z.string().url().optional(),
   otelServiceName: z.string().default('gateway'),
+  prometheusUrl: z.string().url().optional(),
 });
 
 export type Config = z.infer<typeof configSchema>;
@@ -47,8 +50,11 @@ export async function loadConfig(): Promise<Config> {
     oidcIssuer: process.env.OIDC_ISSUER,
     oidcAudience: process.env.OIDC_AUDIENCE,
 
+    corsOrigin: process.env.CORS_ORIGIN,
+
     otelExporterEndpoint: process.env.OTEL_EXPORTER_OTLP_ENDPOINT,
     otelServiceName: process.env.OTEL_SERVICE_NAME,
+    prometheusUrl: process.env.PROMETHEUS_URL,
   };
 
   return configSchema.parse(raw);
