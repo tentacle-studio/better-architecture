@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: lab-config
+  labels:
+    app: workload
+data:
+  LAB_NAME: "distributed-message-queue"
+  SEED_LEVEL: "infra-minimal"
+  README: |
+    Minimal infrastructure for the Distributed Message Queue lab.
+
+    You have a blank namespace with terminal access — no pre-deployed services.
+    Design your Kafka-style message queue system from scratch.
+
+    Think about:
+    - How many broker nodes? How are they discovered?
+    - Topic partitioning strategy and partition-to-broker assignment
+    - Replication: ISR model, acks=0 vs acks=1 vs acks=all
+    - Consumer group offset tracking and rebalancing
+    - What happens when a broker crashes mid-write?

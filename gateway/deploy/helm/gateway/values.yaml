@@ -1,0 +1,44 @@
+replicaCount: 1
+
+image:
+  repository: gateway
+  pullPolicy: IfNotPresent
+  tag: "latest"
+
+service:
+  type: ClusterIP
+  port: 3000
+
+ingress:
+  enabled: false
+  className: ""
+  host: gateway.example.com
+  annotations: {}
+  tls: []
+
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 250m
+    memory: 256Mi
+
+env:
+  NODE_ENV: "production"
+  PORT: "3000"
+  HOST: "0.0.0.0"
+  ORCHESTRATOR_GRPC_URL: "orchestrator:50051"
+  NATS_URL: "nats://nats:4222"
+  OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector:4318"
+  OTEL_SERVICE_NAME: "gateway"
+  JWT_ACCESS_EXPIRY: "15m"
+  JWT_REFRESH_EXPIRY: "7d"
+  OIDC_ISSUER: "https://your-auth-provider.com"
+  OIDC_AUDIENCE: "your-client-id"
+
+# HashiCorp Vault — secrets fetched at startup via Kubernetes auth
+vault:
+  addr: "http://vault.vault-system.svc.cluster.local:8200"
+  role: "gateway"
+  secretPath: "secret/data/gateway"

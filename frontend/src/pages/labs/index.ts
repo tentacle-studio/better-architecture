@@ -1,0 +1,1 @@
+export { default as Labs } from './ui/LabsPage';

@@ -1,0 +1,115 @@
+syntax = "proto3";
+
+package orchestrator;
+
+option go_package = "github.com/tentacle-studio/better-architecture/orchestrator/internal/grpc/proto";
+
+service Orchestrator {
+  // Sandbox lifecycle
+  rpc CreateSandbox(CreateSandboxRequest) returns (CreateSandboxResponse);
+  rpc DestroySandbox(DestroySandboxRequest) returns (Empty);
+  rpc GetSandboxStatus(GetSandboxStatusRequest) returns (SandboxStatus);
+
+  // Terminal exec — bidirectional stream
+  rpc ExecStream(stream ExecInput) returns (stream ExecOutput);
+
+  // Validation
+  rpc ValidateQuiz(ValidateQuizRequest) returns (ValidateQuizResponse);
+
+  // Sandbox resource state — server-side stream for real-time updates
+  rpc WatchResources(WatchResourcesRequest) returns (stream ResourceEvent);
+}
+
+message CreateSandboxRequest {
+  string user_id = 1;
+  string quiz_id = 2;
+  string seed_manifest = 3;  // base64-encoded K8s YAML
+}
+
+message CreateSandboxResponse {
+  string sandbox_id = 1;
+  string vcluster_endpoint = 2;
+  string kubeconfig = 3;  // scoped kubeconfig for this sandbox
+  string terminal_pod_ip = 4;  // IP of the ttyd shell pod for WebSocket proxy
+}
+
+message DestroySandboxRequest {
+  string sandbox_id = 1;
+}
+
+message GetSandboxStatusRequest {
+  string sandbox_id = 1;
+}
+
+message SandboxStatus {
+  string sandbox_id = 1;
+  string state = 2;  // creating, ready, destroying, failed
+  string vcluster_endpoint = 3;
+  int64 created_at = 4;
+  int64 expires_at = 5;
+}
+
+message ExecInput {
+  string sandbox_id = 1;
+  bytes stdin = 2;
+  TerminalResize resize = 3;
+}
+
+message TerminalResize {
+  uint32 width = 1;
+  uint32 height = 2;
+}
+
+message ExecOutput {
+  bytes stdout = 1;
+  bytes stderr = 2;
+}
+
+message ValidateQuizRequest {
+  string sandbox_id = 1;
+  string quiz_id = 2;
+  repeated Check checks = 3;
+}
+
+message Check {
+  enum Type { 
+    STATE = 0; 
+    LIVENESS = 1; 
+    SLA = 2; 
+  }
+  Type type = 1;
+  string spec_json = 2;  // check-type-specific config
+}
+
+message ValidateQuizResponse {
+  bool passed = 1;
+  repeated CheckResult results = 2;
+  int32 score = 3;
+}
+
+message CheckResult {
+  string check_name = 1;
+  bool passed = 2;
+  string message = 3;
+  int32 points = 4;
+}
+
+message WatchResourcesRequest {
+  string sandbox_id = 1;
+}
+
+message ResourceEvent {
+  string kind = 1;       // Pod, Service, Deployment, etc.
+  string name = 2;
+  string namespace = 3;
+  string status = 4;     // Running, Pending, Failed, etc.
+  string json_patch = 5; // delta update
+  string event_type = 6; // Added, Modified, Deleted, Initial
+  // Pod-specific fields
+  int32 ready_containers = 7;
+  int32 total_containers = 8;
+  int32 restart_count = 9;
+  repeated string conditions = 10;
+}
+
+message Empty {}
